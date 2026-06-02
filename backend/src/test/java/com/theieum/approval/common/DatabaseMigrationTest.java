@@ -14,6 +14,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 @SpringBootTest(properties = {
+        "spring.datasource.url=jdbc:postgresql://localhost:55432/approval_test",
+        "spring.datasource.username=approval",
+        "spring.datasource.password=approval",
         "spring.flyway.clean-disabled=false",
         "spring.flyway.locations=classpath:db/migration,classpath:db/seed"
 })

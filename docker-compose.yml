@@ -15,5 +15,21 @@ services:
       timeout: 5s
       retries: 10
 
+  postgres-test:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: approval_test
+      POSTGRES_USER: approval
+      POSTGRES_PASSWORD: approval
+    ports:
+      - "55432:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U approval -d approval_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres-data:
