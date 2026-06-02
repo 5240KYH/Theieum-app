@@ -6,8 +6,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import javax.sql.DataSource;
-
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -106,22 +104,11 @@ class AuthIntegrationTest {
     @TestConfiguration
     static class CleanFlywayConfiguration {
 
-        private static final String TEST_ADMIN_PASSWORD_HASH =
-                "$2a$10$8X8CxGxCQq6asM.KWSKYh.rhJaTdPC23Jh8pa7EnojSDCFDIB5xNW";
-
         @Bean
-        FlywayMigrationStrategy cleanAndMigrate(DataSource dataSource) {
+        FlywayMigrationStrategy cleanAndMigrate() {
             return (Flyway flyway) -> {
                 flyway.clean();
                 flyway.migrate();
-                try (var connection = dataSource.getConnection();
-                        var statement = connection.prepareStatement(
-                                "update users set password_hash = ? where login_id = 'admin'")) {
-                    statement.setString(1, TEST_ADMIN_PASSWORD_HASH);
-                    statement.executeUpdate();
-                } catch (Exception ex) {
-                    throw new IllegalStateException("Failed to prepare auth test seed", ex);
-                }
             };
         }
     }
