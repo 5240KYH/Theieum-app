@@ -4,12 +4,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.flyway.FlywayMigrationStrategy;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-@SpringBootTest
+@SpringBootTest(properties = {
+        "spring.flyway.clean-disabled=false",
+        "spring.flyway.locations=classpath:db/migration,classpath:db/seed"
+})
 class DatabaseMigrationTest {
 
     @Autowired
@@ -56,6 +63,17 @@ class DatabaseMigrationTest {
                 "select count(*) from users where organization_id is null or position_id is null",
                 Integer.class);
         assertThat(usersMissingRequiredReferences).isZero();
+
+        Integer orgPositionStepCount = jdbcTemplate.queryForObject(
+                "select count(*) from approval_line_steps where step_type = ?",
+                Integer.class,
+                "ORG_POSITION");
+        assertThat(orgPositionStepCount).isGreaterThanOrEqualTo(1);
+
+        Integer activeOrgExceptionCount = jdbcTemplate.queryForObject(
+                "select count(*) from approval_org_exceptions where active = true",
+                Integer.class);
+        assertThat(activeOrgExceptionCount).isGreaterThanOrEqualTo(1);
     }
 
     private void assertTablesExist(String... tableNames) {
@@ -93,6 +111,18 @@ class DatabaseMigrationTest {
             assertThat(columnCount)
                     .as("column %s.%s should exist", tableName, columnName)
                     .isEqualTo(1);
+        }
+    }
+
+    @TestConfiguration
+    static class CleanFlywayConfiguration {
+
+        @Bean
+        FlywayMigrationStrategy cleanAndMigrate() {
+            return (Flyway flyway) -> {
+                flyway.clean();
+                flyway.migrate();
+            };
         }
     }
 }

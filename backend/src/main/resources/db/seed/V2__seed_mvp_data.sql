@@ -61,4 +61,15 @@ insert into approval_line_steps (
     sort_policy
 ) values
     (1, 1, 1, 'DIRECT_USER', null, null, 2, 'POSITION_ORDER'),
-    (2, 1, 2, 'DIRECT_USER', null, null, 1, 'POSITION_ORDER');
+    (2, 1, 2, 'ORG_POSITION', 'APPLICANT_ORG', 4, null, 'POSITION_ORDER'),
+    (3, 1, 3, 'DIRECT_USER', null, null, 1, 'POSITION_ORDER');
+
+insert into approval_org_exceptions (
+    id,
+    approval_type_id,
+    organization_id,
+    approver_user_id,
+    step_order,
+    active
+) values
+    (1, 1, 3, 18, 2, true);
