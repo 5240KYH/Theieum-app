@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: receipt-approval
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:approval}
+    username: ${DB_USERNAME:approval}
+    password: ${DB_PASSWORD:approval}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+
+app:
+  file-storage:
+    root-path: ${FILE_STORAGE_ROOT:./data/uploads}
+  security:
+    jwt-secret: ${JWT_SECRET:local-development-secret-change-me}
