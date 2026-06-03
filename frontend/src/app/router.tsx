@@ -1,5 +1,9 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 
+import { ApplicationDetailPage } from '../applications/ApplicationDetailPage';
+import { ApplicationForm } from '../applications/ApplicationForm';
+import { MyApplicationsPage } from '../applications/MyApplicationsPage';
+import { ApprovalsInboxPage } from '../approvals/ApprovalsInboxPage';
 import { LoginPage } from '../auth/LoginPage';
 import { ProtectedRoute } from '../auth/ProtectedRoute';
 import { AppLayout } from '../shared/layout/AppLayout';
@@ -9,22 +13,6 @@ const pages = {
   dashboard: {
     title: '대시보드',
     description: '내 신청 현황, 결재 대기 건수, 최근 알림을 확인합니다.'
-  },
-  newApplication: {
-    title: '신청서 작성',
-    description: '영수증 첨부 신청서를 작성하고 임시저장 또는 제출합니다.'
-  },
-  myApplications: {
-    title: '내 신청서',
-    description: '내가 작성한 신청서의 상태와 처리 이력을 확인합니다.'
-  },
-  applicationDetail: {
-    title: '신청서 상세',
-    description: '신청 내용, 첨부 이미지, 결재 단계와 이력을 확인합니다.'
-  },
-  approvals: {
-    title: '결재함',
-    description: '나에게 배정된 결재 요청을 검토하고 승인 또는 반려합니다.'
   },
   adminUsers: {
     title: '사용자 관리',
@@ -60,10 +48,10 @@ export function AppRoutes() {
         <Route element={<AppLayout />}>
           <Route index element={<Navigate replace to="/dashboard" />} />
           <Route path="/dashboard" element={<PlaceholderPage {...pages.dashboard} />} />
-          <Route path="/applications/new" element={<PlaceholderPage {...pages.newApplication} />} />
-          <Route path="/applications/my" element={<PlaceholderPage {...pages.myApplications} />} />
-          <Route path="/applications/:id" element={<PlaceholderPage {...pages.applicationDetail} />} />
-          <Route path="/approvals" element={<PlaceholderPage {...pages.approvals} />} />
+          <Route path="/applications/new" element={<ApplicationForm />} />
+          <Route path="/applications/my" element={<MyApplicationsPage />} />
+          <Route path="/applications/:id" element={<ApplicationDetailPage />} />
+          <Route path="/approvals" element={<ApprovalsInboxPage />} />
           <Route element={<ProtectedRoute requiredRole="ADMIN" />}>
             <Route path="/admin/users" element={<PlaceholderPage {...pages.adminUsers} />} />
             <Route path="/admin/organizations" element={<PlaceholderPage {...pages.adminOrganizations} />} />
