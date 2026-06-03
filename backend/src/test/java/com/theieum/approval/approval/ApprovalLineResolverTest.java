@@ -66,7 +66,7 @@ class ApprovalLineResolverTest {
 
         assertThat(approvers)
                 .extracting(ResolvedApprover::userId)
-                .containsSubsequence(3L, 5L, 7L, 18L);
+                .containsExactly(3L, 4L, 8L);
     }
 
     private void insertApprovalType(long id, String name) {

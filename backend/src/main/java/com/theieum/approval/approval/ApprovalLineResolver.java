@@ -116,10 +116,9 @@ public class ApprovalLineResolver {
                         select users.id
                         from users
                         join positions on positions.id = users.position_id
-                        join positions required_positions on required_positions.id = ?
-                        where users.organization_id = ?
+                        where users.position_id = ?
+                          and users.organization_id = ?
                           and users.active = true
-                          and positions.rank_order >= required_positions.rank_order
                         order by positions.rank_order asc, users.id asc
                         """)
                 .setParameter(1, step.getPosition().getId())
