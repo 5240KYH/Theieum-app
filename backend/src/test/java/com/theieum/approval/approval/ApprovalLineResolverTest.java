@@ -1,6 +1,7 @@
 package com.theieum.approval.approval;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 
@@ -44,6 +45,12 @@ class ApprovalLineResolverTest {
         assertThat(approvers)
                 .extracting(ResolvedApprover::userId)
                 .containsExactly(18L, 20L);
+        assertThat(approvers)
+                .extracting(ResolvedApprover::stepOrder)
+                .containsExactly(1, 2);
+        assertThat(approvers)
+                .extracting(ResolvedApprover::stepType)
+                .containsExactly(ApprovalStepType.DIRECT_USER, ApprovalStepType.DIRECT_USER);
     }
 
     @Test
@@ -53,6 +60,12 @@ class ApprovalLineResolverTest {
         assertThat(approvers)
                 .extracting(ResolvedApprover::userId)
                 .containsExactly(18L);
+        assertThat(approvers)
+                .extracting(ResolvedApprover::stepOrder)
+                .containsExactly(2);
+        assertThat(approvers)
+                .extracting(ResolvedApprover::stepType)
+                .containsExactly(ApprovalStepType.DIRECT_USER);
     }
 
     @Test
@@ -67,6 +80,73 @@ class ApprovalLineResolverTest {
         assertThat(approvers)
                 .extracting(ResolvedApprover::userId)
                 .containsExactly(3L, 4L, 8L);
+        assertThat(approvers)
+                .extracting(ResolvedApprover::stepOrder)
+                .containsExactly(1, 1, 1);
+        assertThat(approvers)
+                .extracting(ResolvedApprover::stepType)
+                .containsExactly(
+                        ApprovalStepType.ORG_POSITION,
+                        ApprovalStepType.ORG_POSITION,
+                        ApprovalStepType.ORG_POSITION);
+    }
+
+    @Test
+    void orgPositionStepWithoutMatchingApproverFailsLineResolution() {
+        long approvalTypeId = 103L;
+        insertApprovalType(approvalTypeId, "빈 조직 직위 단계 테스트");
+        insertApprovalLine(103L, approvalTypeId, "빈 조직 직위 결재선");
+        insertDirectUserStep(104L, 103L, 1, 18L);
+        insertOrgPositionStep(105L, 103L, 2, 5L);
+        insertDirectUserStep(106L, 103L, 3, 20L);
+
+        assertThatThrownBy(() -> resolver.resolve(approvalTypeId, 3L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("ORG_POSITION step has no active approvers");
+    }
+
+    @Test
+    void inactiveDirectUserStepFailsLineResolution() {
+        long approvalTypeId = 104L;
+        insertApprovalType(approvalTypeId, "비활성 직접 결재자 테스트");
+        insertApprovalLine(104L, approvalTypeId, "비활성 직접 결재선");
+        insertDirectUserStep(107L, 104L, 1, 18L);
+        jdbcTemplate.update("update users set active = false where id = ?", 18L);
+
+        try {
+            assertThatThrownBy(() -> resolver.resolve(approvalTypeId, 3L))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("DIRECT_USER step has no active direct user");
+        } finally {
+            jdbcTemplate.update("update users set active = true where id = ?", 18L);
+        }
+    }
+
+    @Test
+    void inactiveOrganizationExceptionFailsLineResolution() {
+        jdbcTemplate.update("update users set active = false where id = ?", 18L);
+
+        try {
+            assertThatThrownBy(() -> resolver.resolve(1L, 3L))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("Organization exception has no active approver");
+        } finally {
+            jdbcTemplate.update("update users set active = true where id = ?", 18L);
+        }
+    }
+
+    @Test
+    void multipleActiveDefaultLinesFailLineResolution() {
+        long approvalTypeId = 105L;
+        insertApprovalType(approvalTypeId, "중복 기본 결재선 테스트");
+        insertApprovalLine(105L, approvalTypeId, "첫 번째 결재선");
+        insertApprovalLine(106L, approvalTypeId, "두 번째 결재선");
+        insertDirectUserStep(108L, 105L, 1, 18L);
+        insertDirectUserStep(109L, 106L, 1, 20L);
+
+        assertThatThrownBy(() -> resolver.resolve(approvalTypeId, 3L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Multiple active approval lines found");
     }
 
     private void insertApprovalType(long id, String name) {

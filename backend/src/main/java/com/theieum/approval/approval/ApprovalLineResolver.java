@@ -58,23 +58,33 @@ public class ApprovalLineResolver {
     }
 
     private List<ResolvedApprover> findOrganizationExceptionApprovers(long approvalTypeId, long organizationId) {
-        return entityManager.createQuery(
+        List<ApprovalOrgException> exceptions = entityManager.createQuery(
                         """
-                        select new com.theieum.approval.approval.ApprovalLineResolver$ResolvedApprover(
-                            exception.approverUser.id,
-                            exception.stepOrder,
-                            com.theieum.approval.approval.ApprovalStepType.DIRECT_USER
-                        )
+                        select exception
                         from ApprovalOrgException exception
+                        join fetch exception.approverUser
                         where exception.approvalType.id = :approvalTypeId
                           and exception.organization.id = :organizationId
                           and exception.active = true
                         order by exception.stepOrder asc, exception.id asc
                         """,
-                        ResolvedApprover.class)
+                        ApprovalOrgException.class)
                 .setParameter("approvalTypeId", approvalTypeId)
                 .setParameter("organizationId", organizationId)
                 .getResultList();
+
+        return exceptions.stream()
+                .map(exception -> {
+                    if (!exception.getApproverUser().isActive()) {
+                        throw new IllegalStateException(
+                                "Organization exception has no active approver: " + exception.getId());
+                    }
+                    return new ResolvedApprover(
+                            exception.getApproverUser().getId(),
+                            exception.getStepOrder(),
+                            ApprovalStepType.DIRECT_USER);
+                })
+                .toList();
     }
 
     private ApprovalLine findDefaultApprovalLine(long approvalTypeId) {
@@ -94,6 +104,9 @@ public class ApprovalLineResolver {
         if (lines.isEmpty()) {
             throw new IllegalStateException("Active approval line not found: " + approvalTypeId);
         }
+        if (lines.size() > 1) {
+            throw new IllegalStateException("Multiple active approval lines found: " + approvalTypeId);
+        }
 
         return lines.getFirst();
     }
@@ -101,6 +114,9 @@ public class ApprovalLineResolver {
     private ResolvedApprover resolveDirectUser(ApprovalLineStep step) {
         if (step.getDirectUser() == null) {
             throw new IllegalStateException("DIRECT_USER step has no direct user: " + step.getId());
+        }
+        if (!step.getDirectUser().isActive()) {
+            throw new IllegalStateException("DIRECT_USER step has no active direct user: " + step.getId());
         }
 
         return new ResolvedApprover(step.getDirectUser().getId(), step.getStepOrder(), step.getStepType());
@@ -124,6 +140,9 @@ public class ApprovalLineResolver {
                 .setParameter(1, step.getPosition().getId())
                 .setParameter(2, organizationId)
                 .getResultList();
+        if (userIds.isEmpty()) {
+            throw new IllegalStateException("ORG_POSITION step has no active approvers: " + step.getId());
+        }
 
         return userIds.stream()
                 .map(userId -> new ResolvedApprover(toLong(userId), step.getStepOrder(), step.getStepType()))
