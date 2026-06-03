@@ -3,10 +3,11 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
 import { ApiError } from '../shared/api';
-import { getApplication } from './applicationApi';
+import { getApplication, getAttachmentContent } from './applicationApi';
 import {
   applicationStatusLabel,
   ApplicationResponse,
+  AttachmentResponse,
   approvalStepStatusLabel,
   currentApprover,
   hasAdminException
@@ -107,10 +108,22 @@ export function ApplicationDetailPage() {
 
             <section className="info-panel" aria-labelledby="attachment-title">
               <h2 id="attachment-title">첨부 이미지</h2>
-              <div className="empty-state large">
-                <FileImage aria-hidden="true" size={28} />
-                <span>첨부 이미지 조회 대기</span>
-              </div>
+              {application.attachments && application.attachments.length > 0 ? (
+                <div className="attachment-list">
+                  {application.attachments.map((attachment) => (
+                    <AttachmentPreview
+                      key={attachment.id}
+                      applicationId={application.id}
+                      attachment={attachment}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state large">
+                  <FileImage aria-hidden="true" size={28} />
+                  <span>첨부 이미지 없음</span>
+                </div>
+              )}
             </section>
           </div>
 
@@ -165,4 +178,65 @@ export function ApplicationDetailPage() {
       ) : null}
     </section>
   );
+}
+
+function AttachmentPreview({
+  applicationId,
+  attachment
+}: {
+  applicationId: number;
+  attachment: AttachmentResponse;
+}) {
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let objectUrl = '';
+    let isMounted = true;
+
+    getAttachmentContent(applicationId, attachment.id)
+      .then((blob) => {
+        objectUrl = URL.createObjectURL(blob);
+        if (isMounted) {
+          setPreviewUrl(objectUrl);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setError('첨부 이미지를 불러오지 못했습니다.');
+        }
+      });
+
+    return () => {
+      isMounted = false;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [applicationId, attachment.id]);
+
+  return (
+    <figure className="attachment-preview">
+      <div className="attachment-thumb">
+        {previewUrl ? (
+          <img src={previewUrl} alt={`${attachment.originalFilename} 미리보기`} />
+        ) : (
+          <FileImage aria-hidden="true" size={28} />
+        )}
+      </div>
+      <figcaption>
+        <strong>{attachment.originalFilename}</strong>
+        <span>{formatFileSize(attachment.fileSize)}</span>
+        {error ? <span className="form-error">{error}</span> : null}
+      </figcaption>
+    </figure>
+  );
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  return `${(bytes / 1024).toFixed(1)} KB`;
 }

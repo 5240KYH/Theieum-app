@@ -28,6 +28,7 @@ export interface ApplicationResponse {
   completedAt: string | null;
   createdAt: string;
   approvalSteps: ApprovalStepResponse[];
+  attachments?: AttachmentResponse[];
   adminOverride?: boolean;
   adminException?: boolean;
 }

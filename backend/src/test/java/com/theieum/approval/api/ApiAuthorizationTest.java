@@ -196,6 +196,49 @@ class ApiAuthorizationTest {
     }
 
     @Test
+    void receiptAttachmentContentUsesApplicationReadPermission() throws Exception {
+        long applicationId = submitApplication(9L, 1L);
+        long attachmentId = attachmentId(applicationId);
+        String applicantToken = login("employee07");
+        String currentApproverToken = login("approver01");
+        String futureApproverToken = login("lead-sales");
+        String otherApplicantToken = login("employee01");
+        String adminToken = login("admin");
+
+        mockMvc.perform(get("/api/applications/{applicationId}/attachments/{attachmentId}/content",
+                        applicationId,
+                        attachmentId)
+                        .header("Authorization", bearer(applicantToken)))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertThat(result.getResponse().getContentType()).isEqualTo("image/png"))
+                .andExpect(result -> assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(pngBytes()));
+
+        mockMvc.perform(get("/api/applications/{applicationId}/attachments/{attachmentId}/content",
+                        applicationId,
+                        attachmentId)
+                        .header("Authorization", bearer(currentApproverToken)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/applications/{applicationId}/attachments/{attachmentId}/content",
+                        applicationId,
+                        attachmentId)
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/applications/{applicationId}/attachments/{attachmentId}/content",
+                        applicationId,
+                        attachmentId)
+                        .header("Authorization", bearer(futureApproverToken)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/applications/{applicationId}/attachments/{attachmentId}/content",
+                        applicationId,
+                        attachmentId)
+                        .header("Authorization", bearer(otherApplicantToken)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void approvalActionReturnsFrontendFriendlyStatusCodes() throws Exception {
         long applicationId = submitApplication(3L, 1L);
         String applicantToken = login("employee01");
@@ -350,6 +393,17 @@ class ApiAuthorizationTest {
         return jdbcTemplate.queryForObject(
                 "select count(*) from approval_line_steps",
                 Integer.class);
+    }
+
+    private long attachmentId(long applicationId) {
+        return jdbcTemplate.queryForObject(
+                """
+                select id
+                from attachments
+                where application_id = ?
+                """,
+                Long.class,
+                applicationId);
     }
 
     private byte[] pngBytes() {

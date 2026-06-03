@@ -1,4 +1,4 @@
-import { api } from '../shared/api';
+import { api, apiBlob } from '../shared/api';
 import { ApplicationResponse, AttachmentResponse, CreateApplicationPayload } from './applicationTypes';
 
 export function createApplication(payload: CreateApplicationPayload) {
@@ -30,4 +30,8 @@ export function getMyApplications() {
 
 export function getApplication(applicationId: string | number) {
   return api<ApplicationResponse>(`/applications/${applicationId}`);
+}
+
+export function getAttachmentContent(applicationId: string | number, attachmentId: string | number) {
+  return apiBlob(`/applications/${applicationId}/attachments/${attachmentId}/content`);
 }

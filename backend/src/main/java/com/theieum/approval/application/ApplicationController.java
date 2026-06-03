@@ -7,6 +7,8 @@ import java.time.LocalDate;
 import java.util.List;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,6 +23,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.theieum.approval.approval.ApprovalStepStatus;
 import com.theieum.approval.attachment.Attachment;
+import com.theieum.approval.attachment.AttachmentRepository;
+import com.theieum.approval.attachment.FileStorage;
 import com.theieum.approval.auth.AuthenticatedUser;
 
 import jakarta.validation.Valid;
@@ -37,14 +41,20 @@ public class ApplicationController {
     private final ApplicationService applicationService;
     private final ApplicationRepository applicationRepository;
     private final ApplicationApprovalStepRepository approvalStepRepository;
+    private final AttachmentRepository attachmentRepository;
+    private final FileStorage fileStorage;
 
     public ApplicationController(
             ApplicationService applicationService,
             ApplicationRepository applicationRepository,
-            ApplicationApprovalStepRepository approvalStepRepository) {
+            ApplicationApprovalStepRepository approvalStepRepository,
+            AttachmentRepository attachmentRepository,
+            FileStorage fileStorage) {
         this.applicationService = applicationService;
         this.applicationRepository = applicationRepository;
         this.approvalStepRepository = approvalStepRepository;
+        this.attachmentRepository = attachmentRepository;
+        this.fileStorage = fileStorage;
     }
 
     @GetMapping("/my")
@@ -97,6 +107,25 @@ public class ApplicationController {
         return AttachmentResponse.from(attachment);
     }
 
+    @GetMapping("/{id}/attachments/{attachmentId}/content")
+    @Transactional(readOnly = true)
+    public ResponseEntity<byte[]> attachmentContent(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable long id,
+            @PathVariable long attachmentId) {
+        Application application = applicationRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        if (!canRead(user, application)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        }
+        Attachment attachment = attachmentRepository.findByIdAndApplicationId(attachmentId, id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(attachment.getMimeType()))
+                .body(fileStorage.read(attachment.getFilePath()));
+    }
+
     @PostMapping("/{id}/submit")
     @Transactional
     public ApplicationResponse submit(
@@ -125,7 +154,12 @@ public class ApplicationController {
                 .stream()
                 .map(ApprovalStepResponse::from)
                 .toList();
-        return ApplicationResponse.from(application, steps);
+        List<AttachmentResponse> attachments = attachmentRepository
+                .findByApplicationIdOrderByIdAsc(application.getId())
+                .stream()
+                .map(AttachmentResponse::from)
+                .toList();
+        return ApplicationResponse.from(application, steps, attachments);
     }
 
     private boolean canRead(AuthenticatedUser user, Application application) {
@@ -169,9 +203,13 @@ public class ApplicationController {
             Instant submittedAt,
             Instant completedAt,
             Instant createdAt,
-            List<ApprovalStepResponse> approvalSteps) {
+            List<ApprovalStepResponse> approvalSteps,
+            List<AttachmentResponse> attachments) {
 
-        static ApplicationResponse from(Application application, List<ApprovalStepResponse> steps) {
+        static ApplicationResponse from(
+                Application application,
+                List<ApprovalStepResponse> steps,
+                List<AttachmentResponse> attachments) {
             return new ApplicationResponse(
                     application.getId(),
                     UserSummary.from(application.getApplicant()),
@@ -185,7 +223,8 @@ public class ApplicationController {
                     application.getSubmittedAt(),
                     application.getCompletedAt(),
                     application.getCreatedAt(),
-                    steps);
+                    steps,
+                    attachments);
         }
     }
 
