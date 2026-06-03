@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 
-import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.flyway.FlywayMigrationStrategy;
@@ -14,11 +13,12 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 @SpringBootTest(properties = {
-        "spring.datasource.url=jdbc:postgresql://localhost:55432/approval_test",
-        "spring.datasource.username=approval",
-        "spring.datasource.password=approval",
+        "spring.datasource.url=" + TestDatabaseHarness.JDBC_URL,
+        "spring.datasource.username=" + TestDatabaseHarness.USERNAME,
+        "spring.datasource.password=" + TestDatabaseHarness.PASSWORD,
         "spring.flyway.clean-disabled=false",
-        "spring.flyway.locations=classpath:db/migration,classpath:db/seed"
+        "spring.flyway.locations=classpath:db/migration,classpath:db/seed",
+        "app.security.jwt-secret=test-jwt-secret-that-is-long-enough-for-hmac"
 })
 class DatabaseMigrationTest {
 
@@ -122,10 +122,7 @@ class DatabaseMigrationTest {
 
         @Bean
         FlywayMigrationStrategy cleanAndMigrate() {
-            return (Flyway flyway) -> {
-                flyway.clean();
-                flyway.migrate();
-            };
+            return TestDatabaseHarness::cleanAndMigrate;
         }
     }
 }

@@ -1,3 +1,7 @@
 spring:
   flyway:
     locations: classpath:db/migration,classpath:db/seed
+
+app:
+  security:
+    jwt-secret: ${JWT_SECRET:local-profile-jwt-secret-change-before-deploy}

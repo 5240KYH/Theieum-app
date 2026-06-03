@@ -6,7 +6,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.flyway.FlywayMigrationStrategy;
@@ -15,20 +14,27 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.theieum.approval.common.TestDatabaseHarness;
+
 @SpringBootTest(properties = {
-        "spring.datasource.url=jdbc:postgresql://localhost:55432/approval_test",
-        "spring.datasource.username=approval",
-        "spring.datasource.password=approval",
+        "spring.datasource.url=" + TestDatabaseHarness.JDBC_URL,
+        "spring.datasource.username=" + TestDatabaseHarness.USERNAME,
+        "spring.datasource.password=" + TestDatabaseHarness.PASSWORD,
         "spring.flyway.clean-disabled=false",
-        "spring.flyway.locations=classpath:db/migration,classpath:db/seed"
+        "spring.flyway.locations=classpath:db/migration,classpath:db/seed",
+        "app.security.jwt-secret=test-jwt-secret-that-is-long-enough-for-hmac"
 })
 @AutoConfigureMockMvc
 class AuthIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Test
     void loginReturnsTokenForSeedAdmin() throws Exception {
@@ -82,6 +88,37 @@ class AuthIntegrationTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    @Test
+    void meRejectsTamperedToken() throws Exception {
+        String accessToken = loginAsAdmin();
+        String tamperedToken = accessToken.substring(0, accessToken.length() - 1)
+                + (accessToken.endsWith("a") ? "b" : "a");
+
+        mockMvc.perform(get("/api/me")
+                        .header("Authorization", "Bearer " + tamperedToken))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void meRejectsInactiveUserAfterTokenIssue() throws Exception {
+        String accessToken = loginAsAdmin();
+        try {
+            jdbcTemplate.update("update users set active = false where login_id = ?", "admin");
+
+            mockMvc.perform(get("/api/me")
+                            .header("Authorization", "Bearer " + accessToken))
+                    .andExpect(status().isUnauthorized());
+        } finally {
+            jdbcTemplate.update("update users set active = true where login_id = ?", "admin");
+        }
+    }
+
+    @Test
+    void nonApiPathsAreDeniedByDefault() throws Exception {
+        mockMvc.perform(get("/internal-health"))
+                .andExpect(status().isUnauthorized());
+    }
+
     private String loginAsAdmin() throws Exception {
         String response = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -106,10 +143,7 @@ class AuthIntegrationTest {
 
         @Bean
         FlywayMigrationStrategy cleanAndMigrate() {
-            return (Flyway flyway) -> {
-                flyway.clean();
-                flyway.migrate();
-            };
+            return TestDatabaseHarness::cleanAndMigrate;
         }
     }
 }

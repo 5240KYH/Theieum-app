@@ -3,6 +3,7 @@ package com.theieum.approval.auth;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
@@ -13,6 +14,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -23,23 +25,35 @@ import com.theieum.approval.user.User;
 public class JwtTokenService {
 
     private static final String HMAC_ALGORITHM = "HmacSHA256";
+    private static final String DEVELOPMENT_SECRET = "local-development-secret-change-me";
     private static final Base64.Encoder URL_ENCODER = Base64.getUrlEncoder().withoutPadding();
     private static final Base64.Decoder URL_DECODER = Base64.getUrlDecoder();
 
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final Duration accessTokenTtl;
     private final byte[] secret;
 
+    @Autowired
     public JwtTokenService(
             ObjectMapper objectMapper,
             @Value("${app.security.jwt-secret}") String jwtSecret) {
+        this(objectMapper, jwtSecret, Clock.systemUTC(), Duration.ofHours(1));
+    }
+
+    JwtTokenService(
+            ObjectMapper objectMapper,
+            String jwtSecret,
+            Clock clock,
+            Duration accessTokenTtl) {
         this.objectMapper = objectMapper;
-        this.clock = Clock.systemUTC();
-        this.secret = jwtSecret.getBytes(StandardCharsets.UTF_8);
+        this.clock = clock;
+        this.accessTokenTtl = accessTokenTtl;
+        this.secret = validateSecret(jwtSecret).getBytes(StandardCharsets.UTF_8);
     }
 
     public String createAccessToken(User user) {
-        long expiresAt = Instant.now(clock).plusSeconds(60 * 60).getEpochSecond();
+        long expiresAt = Instant.now(clock).plus(accessTokenTtl).getEpochSecond();
         Map<String, Object> header = Map.of("alg", "HS256", "typ", "JWT");
         Map<String, Object> payload = Map.of(
                 "sub", user.getLoginId(),
@@ -113,5 +127,15 @@ public class JwtTokenService {
         } catch (IllegalArgumentException ex) {
             return false;
         }
+    }
+
+    private String validateSecret(String jwtSecret) {
+        if (jwtSecret == null || jwtSecret.isBlank()) {
+            throw new IllegalArgumentException("JWT secret must not be blank");
+        }
+        if (DEVELOPMENT_SECRET.equals(jwtSecret)) {
+            throw new IllegalArgumentException("JWT secret must be supplied outside the shared development default");
+        }
+        return jwtSecret;
     }
 }

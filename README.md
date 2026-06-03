@@ -13,6 +13,12 @@ npm install
 npm run build
 ```
 
+기본 profile로 서버를 실행할 때는 `JWT_SECRET` 환경변수를 반드시 지정해야 합니다. 로컬 개발용 seed 데이터까지 함께 쓰려면 `local` profile을 사용하되, 배포 전에는 별도 secret으로 교체하세요.
+
+```bash
+SPRING_PROFILES_ACTIVE=local JWT_SECRET=change-this-local-secret ./gradlew bootRun
+```
+
 ## 데이터베이스 하네스
 
 일반 개발 DB는 영속 볼륨을 사용하는 `postgres` 서비스입니다.
