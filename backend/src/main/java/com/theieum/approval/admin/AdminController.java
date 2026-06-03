@@ -1,0 +1,420 @@
+package com.theieum.approval.admin;
+
+import java.util.List;
+import java.util.Map;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
+
+import com.theieum.approval.application.Application;
+import com.theieum.approval.application.ApplicationRepository;
+import com.theieum.approval.application.ApplicationService;
+import com.theieum.approval.auth.AuthenticatedUser;
+import com.theieum.approval.notification.NotificationEventRepository;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+
+@RestController
+@RequestMapping("/api/admin")
+public class AdminController {
+
+    private final JdbcTemplate jdbcTemplate;
+    private final PasswordEncoder passwordEncoder;
+    private final ApplicationService applicationService;
+    private final ApplicationRepository applicationRepository;
+    private final NotificationEventRepository notificationEventRepository;
+
+    public AdminController(
+            JdbcTemplate jdbcTemplate,
+            PasswordEncoder passwordEncoder,
+            ApplicationService applicationService,
+            ApplicationRepository applicationRepository,
+            NotificationEventRepository notificationEventRepository) {
+        this.jdbcTemplate = jdbcTemplate;
+        this.passwordEncoder = passwordEncoder;
+        this.applicationService = applicationService;
+        this.applicationRepository = applicationRepository;
+        this.notificationEventRepository = notificationEventRepository;
+    }
+
+    @GetMapping("/users")
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> users(@AuthenticationPrincipal AuthenticatedUser user) {
+        requireAdmin(user);
+        return jdbcTemplate.queryForList("""
+                select u.id,
+                       u.login_id,
+                       u.name,
+                       u.email,
+                       u.organization_id,
+                       o.name as organization_name,
+                       u.position_id,
+                       p.name as position_name,
+                       u.roles,
+                       u.active
+                from users u
+                join organizations o on o.id = u.organization_id
+                join positions p on p.id = u.position_id
+                order by u.id asc
+                """);
+    }
+
+    @PostMapping("/users")
+    @Transactional
+    public Map<String, Object> createUser(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @Valid @RequestBody CreateUserRequest request) {
+        requireAdmin(user);
+        Long id = jdbcTemplate.queryForObject(
+                """
+                insert into users (
+                    login_id,
+                    external_subject,
+                    password_hash,
+                    name,
+                    email,
+                    organization_id,
+                    position_id,
+                    roles,
+                    active
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                returning id
+                """,
+                Long.class,
+                request.loginId,
+                request.externalSubject,
+                passwordEncoder.encode(request.password),
+                request.name,
+                request.email,
+                request.organizationId,
+                request.positionId,
+                request.roles == null || request.roles.isBlank() ? "APPLICANT" : request.roles,
+                request.active == null || request.active);
+        return one("select id, login_id, name, email, organization_id, position_id, roles, active from users where id = ?", id);
+    }
+
+    @GetMapping("/organizations")
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> organizations(@AuthenticationPrincipal AuthenticatedUser user) {
+        requireAdmin(user);
+        return jdbcTemplate.queryForList("""
+                select id, name, parent_id, level_no, sort_order, active
+                from organizations
+                order by sort_order asc, id asc
+                """);
+    }
+
+    @PostMapping("/organizations")
+    @Transactional
+    public Map<String, Object> createOrganization(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @Valid @RequestBody CreateOrganizationRequest request) {
+        requireAdmin(user);
+        Long id = jdbcTemplate.queryForObject(
+                """
+                insert into organizations (name, parent_id, level_no, sort_order, active)
+                values (?, ?, ?, ?, ?)
+                returning id
+                """,
+                Long.class,
+                request.name,
+                request.parentId,
+                request.levelNo == null ? 1 : request.levelNo,
+                request.sortOrder == null ? nextSortOrder("organizations") : request.sortOrder,
+                request.active == null || request.active);
+        return one("select id, name, parent_id, level_no, sort_order, active from organizations where id = ?", id);
+    }
+
+    @GetMapping("/positions")
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> positions(@AuthenticationPrincipal AuthenticatedUser user) {
+        requireAdmin(user);
+        return jdbcTemplate.queryForList("""
+                select id, name, rank_order, sort_order, active
+                from positions
+                order by sort_order asc, id asc
+                """);
+    }
+
+    @PostMapping("/positions")
+    @Transactional
+    public Map<String, Object> createPosition(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @Valid @RequestBody CreatePositionRequest request) {
+        requireAdmin(user);
+        Long id = jdbcTemplate.queryForObject(
+                """
+                insert into positions (name, rank_order, sort_order, active)
+                values (?, ?, ?, ?)
+                returning id
+                """,
+                Long.class,
+                request.name,
+                request.rankOrder == null ? nextSortOrder("positions") : request.rankOrder,
+                request.sortOrder == null ? nextSortOrder("positions") : request.sortOrder,
+                request.active == null || request.active);
+        return one("select id, name, rank_order, sort_order, active from positions where id = ?", id);
+    }
+
+    @GetMapping("/approval-lines")
+    @Transactional(readOnly = true)
+    public List<ApprovalLineResponse> approvalLines(@AuthenticationPrincipal AuthenticatedUser user) {
+        requireAdmin(user);
+        return jdbcTemplate.queryForList("""
+                select id, approval_type_id, name, active
+                from approval_lines
+                order by id asc
+                """).stream()
+                .map(row -> new ApprovalLineResponse(
+                        ((Number) row.get("id")).longValue(),
+                        ((Number) row.get("approval_type_id")).longValue(),
+                        (String) row.get("name"),
+                        (Boolean) row.get("active"),
+                        approvalLineSteps(((Number) row.get("id")).longValue())))
+                .toList();
+    }
+
+    @PostMapping("/approval-lines")
+    @Transactional
+    public ApprovalLineResponse createApprovalLine(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @Valid @RequestBody CreateApprovalLineRequest request) {
+        requireAdmin(user);
+        Long id = jdbcTemplate.queryForObject(
+                """
+                insert into approval_lines (approval_type_id, name, active)
+                values (?, ?, ?)
+                returning id
+                """,
+                Long.class,
+                request.approvalTypeId,
+                request.name,
+                request.active == null || request.active);
+        if (request.steps != null) {
+            for (CreateApprovalLineStepRequest step : request.steps) {
+                jdbcTemplate.update(
+                        """
+                        insert into approval_line_steps (
+                            approval_line_id,
+                            step_order,
+                            step_type,
+                            organization_scope,
+                            position_id,
+                            direct_user_id,
+                            sort_policy
+                        ) values (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        id,
+                        step.stepOrder,
+                        step.stepType,
+                        step.organizationScope,
+                        step.positionId,
+                        step.directUserId,
+                        step.sortPolicy == null || step.sortPolicy.isBlank() ? "POSITION_ORDER" : step.sortPolicy);
+            }
+        }
+        return approvalLines(user).stream()
+                .filter(line -> line.id().equals(id))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR));
+    }
+
+    @PostMapping("/approvals/steps/{stepId}/approve")
+    @Transactional
+    public AdminApprovalResponse adminApprove(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable long stepId,
+            @Valid @RequestBody AdminApprovalRequest request) {
+        requireAdmin(user);
+        try {
+            return AdminApprovalResponse.from(applicationService.adminApprove(stepId, user.id(), request.reason));
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
+        } catch (IllegalStateException exception) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, exception.getMessage(), exception);
+        }
+    }
+
+    @GetMapping("/applications")
+    @Transactional(readOnly = true)
+    public List<AdminApplicationResponse> applications(@AuthenticationPrincipal AuthenticatedUser user) {
+        requireAdmin(user);
+        return applicationRepository.findAll()
+                .stream()
+                .map(AdminApplicationResponse::from)
+                .toList();
+    }
+
+    @GetMapping("/notification-events")
+    @Transactional(readOnly = true)
+    public List<AdminNotificationEventResponse> notificationEvents(@AuthenticationPrincipal AuthenticatedUser user) {
+        requireAdmin(user);
+        return notificationEventRepository.findAll()
+                .stream()
+                .map(AdminNotificationEventResponse::from)
+                .toList();
+    }
+
+    private List<ApprovalLineStepResponse> approvalLineSteps(long approvalLineId) {
+        return jdbcTemplate.queryForList(
+                """
+                select id, step_order, step_type, organization_scope, position_id, direct_user_id, sort_policy
+                from approval_line_steps
+                where approval_line_id = ?
+                order by step_order asc
+                """,
+                approvalLineId).stream()
+                .map(row -> new ApprovalLineStepResponse(
+                        ((Number) row.get("id")).longValue(),
+                        ((Number) row.get("step_order")).intValue(),
+                        (String) row.get("step_type"),
+                        (String) row.get("organization_scope"),
+                        toLong(row.get("position_id")),
+                        toLong(row.get("direct_user_id")),
+                        (String) row.get("sort_policy")))
+                .toList();
+    }
+
+    private Long toLong(Object value) {
+        return value == null ? null : ((Number) value).longValue();
+    }
+
+    private int nextSortOrder(String tableName) {
+        Integer maxSortOrder = jdbcTemplate.queryForObject(
+                "select coalesce(max(sort_order), 0) from " + tableName,
+                Integer.class);
+        return maxSortOrder + 10;
+    }
+
+    private Map<String, Object> one(String sql, Object id) {
+        return jdbcTemplate.queryForMap(sql, id);
+    }
+
+    private void requireAdmin(AuthenticatedUser user) {
+        if (user == null || !user.roles().contains("ADMIN")) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        }
+    }
+
+    public record CreateUserRequest(
+            @NotBlank String loginId,
+            String externalSubject,
+            @NotBlank String password,
+            @NotBlank String name,
+            @NotBlank String email,
+            @NotNull Long organizationId,
+            @NotNull Long positionId,
+            String roles,
+            Boolean active) {
+    }
+
+    public record CreateOrganizationRequest(
+            @NotBlank String name,
+            Long parentId,
+            @Positive Integer levelNo,
+            @Positive Integer sortOrder,
+            Boolean active) {
+    }
+
+    public record CreatePositionRequest(
+            @NotBlank String name,
+            @Positive Integer rankOrder,
+            @Positive Integer sortOrder,
+            Boolean active) {
+    }
+
+    public record CreateApprovalLineRequest(
+            @NotNull Long approvalTypeId,
+            @NotBlank String name,
+            Boolean active,
+            List<@Valid CreateApprovalLineStepRequest> steps) {
+    }
+
+    public record CreateApprovalLineStepRequest(
+            @Positive int stepOrder,
+            @NotBlank String stepType,
+            String organizationScope,
+            Long positionId,
+            Long directUserId,
+            String sortPolicy) {
+    }
+
+    public record AdminApprovalRequest(@NotBlank String reason) {
+    }
+
+    public record ApprovalLineResponse(
+            Long id,
+            Long approvalTypeId,
+            String name,
+            boolean active,
+            List<ApprovalLineStepResponse> steps) {
+    }
+
+    public record ApprovalLineStepResponse(
+            Long id,
+            int stepOrder,
+            String stepType,
+            String organizationScope,
+            Long positionId,
+            Long directUserId,
+            String sortPolicy) {
+    }
+
+    public record AdminApprovalResponse(Long id, String status) {
+
+        static AdminApprovalResponse from(Application application) {
+            return new AdminApprovalResponse(application.getId(), application.getStatus().name());
+        }
+    }
+
+    public record AdminApplicationResponse(
+            Long id,
+            Long applicantId,
+            String applicantName,
+            String status,
+            String vendor) {
+
+        static AdminApplicationResponse from(Application application) {
+            return new AdminApplicationResponse(
+                    application.getId(),
+                    application.getApplicant().getId(),
+                    application.getApplicant().getName(),
+                    application.getStatus().name(),
+                    application.getVendor());
+        }
+    }
+
+    public record AdminNotificationEventResponse(
+            Long id,
+            Long recipientId,
+            Long applicationId,
+            String notificationType,
+            String channel,
+            String status,
+            boolean read) {
+
+        static AdminNotificationEventResponse from(com.theieum.approval.notification.NotificationEvent event) {
+            return new AdminNotificationEventResponse(
+                    event.getId(),
+                    event.getRecipient().getId(),
+                    event.getApplication() == null ? null : event.getApplication().getId(),
+                    event.getNotificationType().name(),
+                    event.getChannel().name(),
+                    event.getStatus().name(),
+                    event.isReadFlag());
+        }
+    }
+}

@@ -12,6 +12,12 @@ public interface ApplicationApprovalStepRepository extends JpaRepository<Applica
 
     List<ApplicationApprovalStep> findByApplicationIdOrderByStepOrderAsc(Long applicationId);
 
+    List<ApplicationApprovalStep> findByOriginalApproverIdAndStatusOrderByApplicationCreatedAtDesc(
+            Long originalApproverId,
+            com.theieum.approval.approval.ApprovalStepStatus status);
+
+    boolean existsByApplicationIdAndOriginalApproverId(Long applicationId, Long originalApproverId);
+
     @Query("select step.application.id from ApplicationApprovalStep step where step.id = :id")
     Long findApplicationIdByStepId(@Param("id") Long id);
 

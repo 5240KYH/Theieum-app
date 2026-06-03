@@ -147,4 +147,8 @@ public class NotificationEvent {
     public Instant getCreatedAt() {
         return createdAt;
     }
+
+    public void markRead() {
+        this.readFlag = true;
+    }
 }

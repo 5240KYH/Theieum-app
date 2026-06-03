@@ -1,0 +1,239 @@
+package com.theieum.approval.api;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.flyway.FlywayMigrationStrategy;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.web.servlet.MockMvc;
+
+import com.theieum.approval.application.Application;
+import com.theieum.approval.application.ApplicationService;
+import com.theieum.approval.common.TestDatabaseHarness;
+
+@SpringBootTest(properties = {
+        "spring.datasource.url=" + TestDatabaseHarness.JDBC_URL,
+        "spring.datasource.username=" + TestDatabaseHarness.USERNAME,
+        "spring.datasource.password=" + TestDatabaseHarness.PASSWORD,
+        "spring.flyway.clean-disabled=false",
+        "spring.flyway.locations=classpath:db/migration,classpath:db/seed",
+        "app.security.jwt-secret=test-jwt-secret-that-is-long-enough-for-hmac",
+        "app.file-storage.root-path=/private/tmp/theieum-approval-test"
+})
+@AutoConfigureMockMvc
+class ApiAuthorizationTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private ApplicationService applicationService;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @Test
+    void applicantCannotApproveOthersPendingStep() throws Exception {
+        long applicationId = submitApplication(3L, 1L);
+        long stepId = stepId(applicationId, 1);
+        String applicantToken = login("employee01");
+
+        mockMvc.perform(post("/api/approvals/steps/{stepId}/approve", stepId)
+                        .header("Authorization", bearer(applicantToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "comment": "제가 승인할 수 없습니다"
+                                }
+                                """))
+                .andExpect(status().isForbidden());
+
+        assertThat(stepStatus(applicationId, 1)).isEqualTo("PENDING");
+    }
+
+    @Test
+    void approverCanOnlyApproveAssignedStep() throws Exception {
+        long applicationId = submitApplication(3L, 1L);
+        long stepId = stepId(applicationId, 1);
+        String wrongApproverToken = login("approver01");
+        String assignedApproverToken = login("lead-dev");
+
+        mockMvc.perform(post("/api/approvals/steps/{stepId}/approve", stepId)
+                        .header("Authorization", bearer(wrongApproverToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "comment": "배정되지 않은 결재자"
+                                }
+                                """))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/approvals/steps/{stepId}/approve", stepId)
+                        .header("Authorization", bearer(assignedApproverToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "comment": "승인합니다"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(applicationId))
+                .andExpect(jsonPath("$.status").value("APPROVED"));
+
+        assertThat(stepStatus(applicationId, 1)).isEqualTo("APPROVED");
+    }
+
+    @Test
+    void adminCanUseAdminOverride() throws Exception {
+        long applicationId = submitApplication(3L, 1L);
+        long stepId = stepId(applicationId, 1);
+        String adminToken = login("admin");
+
+        mockMvc.perform(post("/api/admin/approvals/steps/{stepId}/approve", stepId)
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "reason": "결재자 부재로 관리자 예외 승인"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(applicationId));
+
+        assertThat(stepStatus(applicationId, 1)).isEqualTo("ADMIN_APPROVED");
+        assertThat(historyAdminReason(applicationId))
+                .isEqualTo("결재자 부재로 관리자 예외 승인");
+    }
+
+    @Test
+    void applicantCanReadOwnApplicationOnly() throws Exception {
+        long ownApplicationId = submitApplication(3L, 1L);
+        long othersApplicationId = submitApplication(4L, 1L);
+        String applicantToken = login("employee01");
+
+        mockMvc.perform(get("/api/applications/{id}", ownApplicationId)
+                        .header("Authorization", bearer(applicantToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(ownApplicationId))
+                .andExpect(jsonPath("$.applicant.id").value(3));
+
+        mockMvc.perform(get("/api/applications/{id}", othersApplicationId)
+                        .header("Authorization", bearer(applicantToken)))
+                .andExpect(status().isForbidden());
+    }
+
+    private long submitApplication(long applicantId, long approvalTypeId) {
+        Application application = applicationService.createDraft(new ApplicationService.CreateDraftCommand(
+                applicantId,
+                approvalTypeId,
+                LocalDate.of(2026, 6, 3),
+                LocalDate.of(2026, 6, 2),
+                "테스트 상점",
+                new BigDecimal("12500.00"),
+                "점심 식대"));
+        applicationService.attachReceiptImage(
+                application.getId(),
+                applicantId,
+                "receipt.png",
+                "image/png",
+                pngBytes());
+        applicationService.submit(application.getId(), applicantId);
+        return application.getId();
+    }
+
+    private String login(String loginId) throws Exception {
+        String response = mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "loginId": "%s",
+                                  "password": "password"
+                                }
+                                """.formatted(loginId)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String accessToken = response.replaceAll(".*\\\"accessToken\\\":\\\"([^\\\"]+)\\\".*", "$1");
+        assertThat(accessToken).isNotBlank();
+        return accessToken;
+    }
+
+    private String bearer(String accessToken) {
+        return "Bearer " + accessToken;
+    }
+
+    private long stepId(long applicationId, int stepOrder) {
+        return jdbcTemplate.queryForObject(
+                """
+                select id
+                from application_approval_steps
+                where application_id = ? and step_order = ?
+                """,
+                Long.class,
+                applicationId,
+                stepOrder);
+    }
+
+    private String stepStatus(long applicationId, int stepOrder) {
+        return jdbcTemplate.queryForObject(
+                """
+                select status
+                from application_approval_steps
+                where application_id = ? and step_order = ?
+                """,
+                String.class,
+                applicationId,
+                stepOrder);
+    }
+
+    private String historyAdminReason(long applicationId) {
+        return jdbcTemplate.queryForObject(
+                """
+                select admin_reason
+                from approval_histories
+                where application_id = ?
+                order by id desc
+                limit 1
+                """,
+                String.class,
+                applicationId);
+    }
+
+    private byte[] pngBytes() {
+        return new byte[] {
+                (byte) 0x89,
+                0x50,
+                0x4e,
+                0x47,
+                0x0d,
+                0x0a,
+                0x1a,
+                0x0a,
+                0x00
+        };
+    }
+
+    @TestConfiguration
+    static class CleanFlywayConfiguration {
+
+        @Bean
+        FlywayMigrationStrategy cleanAndMigrate() {
+            return TestDatabaseHarness::cleanAndMigrate;
+        }
+    }
+}
