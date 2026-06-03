@@ -21,6 +21,14 @@
 - 신청서 제출 시 결재선은 스냅샷으로 고정한다.
 - 구현 단계에서는 각 서브에이전트의 파일 소유 범위를 분리한다.
 
+### 0.1 컨텍스트 관리와 task별 인수인계
+
+- 각 Task를 시작할 때 현재 범위, 기존 변경물, 검증 기준을 먼저 확인한다.
+- 각 Task를 완료하거나 컨텍스트 사용량이 많아져 새 채팅 전환이 필요해질 때 `docs/handoffs/YYYY-MM-DD-task-N-<slug>.md` 형식의 인수인계서를 작성한다.
+- task별 인수인계서에는 반드시 현재 브랜치, 마지막 커밋, 작업 파일, 완료/미완료 항목, 검증 명령과 결과, 다음 채팅에서 바로 실행할 프롬프트를 포함한다.
+- 기존 작업 중간에 새 채팅으로 넘길 때는 루트 인수인계서인 `docs/handoff-YYYY-MM-DD.md`에도 최신 task별 인수인계서 경로를 추가한다.
+- 컨텍스트가 무거워지면 새 기능을 더 얹지 말고 현재 Task의 검증 가능한 단위에서 멈춘 뒤 인수인계서를 남긴다.
+
 ## 1. 파일 구조
 
 ```text
@@ -1553,13 +1561,58 @@ git commit -m "feat: add admin and notification screens"
 ## Task 11: Docker 실행 하네스
 
 **Files:**
+- Modify: `.gitignore`
+- Create: `.dockerignore`
+- Create: `backend/.dockerignore`
 - Modify: `docker-compose.yml`
 - Create: `backend/Dockerfile`
 - Create: `frontend/Dockerfile`
 - Create: `docker/nginx.conf`
 - Modify: `README.md`
+- Create: `docs/handoffs/2026-06-03-task-11-docker-execution-harness.md`
+- Modify: `docs/handoff-2026-06-03.md`
 
-- [ ] **Step 1: backend Dockerfile 생성**
+- [ ] **Step 1: Docker ignore 파일 생성**
+
+Create `.dockerignore`:
+
+```gitignore
+.git/
+.idea/
+.gradle-home/
+backend/build/
+backend/.gradle/
+frontend/node_modules/
+frontend/dist/
+```
+
+Create `backend/.dockerignore`:
+
+```gitignore
+.gradle/
+build/
+data/
+```
+
+Modify `.gitignore` to include IDE and generated build output:
+
+```gitignore
+.DS_Store
+.idea/
+
+backend/build/
+backend/.gradle/
+
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+
+.gradle-home/
+```
+
+- [ ] **Step 2: backend Dockerfile 생성**
 
 Create `backend/Dockerfile`:
 
@@ -1567,7 +1620,7 @@ Create `backend/Dockerfile`:
 FROM eclipse-temurin:21-jdk AS build
 WORKDIR /app
 COPY . .
-RUN ./gradlew bootJar
+RUN ./gradlew bootJar --no-daemon
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
@@ -1576,25 +1629,25 @@ EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]
 ```
 
-- [ ] **Step 2: frontend Dockerfile 생성**
+- [ ] **Step 3: frontend Dockerfile 생성**
 
 Create `frontend/Dockerfile`:
 
 ```Dockerfile
 FROM node:22-alpine AS build
 WORKDIR /app
-COPY package*.json ./
+COPY frontend/package*.json ./
 RUN npm ci
-COPY . .
+COPY frontend/ ./
 RUN npm run build
 
 FROM nginx:1.27-alpine
 COPY --from=build /app/dist /usr/share/nginx/html
-COPY ../docker/nginx.conf /etc/nginx/conf.d/default.conf
+COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
 ```
 
-- [ ] **Step 3: nginx 설정 생성**
+- [ ] **Step 4: nginx 설정 생성**
 
 Create `docker/nginx.conf`:
 
@@ -1610,6 +1663,8 @@ server {
         proxy_pass http://backend:8080/api/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 
     location / {
@@ -1618,7 +1673,7 @@ server {
 }
 ```
 
-- [ ] **Step 4: docker-compose 전체 구성으로 확장**
+- [ ] **Step 5: docker-compose 전체 구성으로 확장**
 
 Modify `docker-compose.yml`:
 
@@ -1634,23 +1689,30 @@ services:
       - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U approval -d approval"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   backend:
     build: ./backend
     environment:
+      SPRING_PROFILES_ACTIVE: local
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: approval
       DB_USERNAME: approval
       DB_PASSWORD: approval
       FILE_STORAGE_ROOT: /app/uploads
-      JWT_SECRET: local-development-secret-change-me
+      JWT_SECRET: theieum-compose-local-jwt-secret-change-before-deploy-2026
     ports:
       - "8080:8080"
     volumes:
       - upload-data:/app/uploads
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
 
   frontend:
     build:
@@ -1661,12 +1723,38 @@ services:
     depends_on:
       - backend
 
+  postgres-test:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: approval_test
+      POSTGRES_USER: approval
+      POSTGRES_PASSWORD: approval
+    ports:
+      - "55432:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U approval -d approval_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres-data:
   upload-data:
 ```
 
-- [ ] **Step 5: Docker 실행 검증**
+- [ ] **Step 6: Docker Compose 설정 검증**
+
+Run:
+
+```bash
+docker compose config
+```
+
+Expected: normalized Compose config is printed and exits with code 0.
+
+- [ ] **Step 7: Docker 실행 검증**
 
 Run:
 
@@ -1682,13 +1770,68 @@ backend-1   | Started ApprovalApplication
 postgres-1  | database system is ready to accept connections
 ```
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 8: HTTP 접근 검증**
+
+Run in another terminal while Compose is running:
+
+```bash
+curl -I http://localhost:3000
+curl -i http://localhost:8080/api/auth/login
+```
+
+Expected: frontend returns `HTTP/1.1 200 OK`. The backend login endpoint may return `401 Unauthorized`, `405 Method Not Allowed`, or a JSON error for GET, but it must reach the Spring Boot application rather than connection failure.
+
+- [ ] **Step 9: Task 11 인수인계서 작성**
+
+Create `docs/handoffs/2026-06-03-task-11-docker-execution-harness.md` with:
+
+```markdown
+# Task 11 Docker 실행 하네스 인수인계
+
+작성 시점: 2026-06-03, Asia/Seoul
+작업 경로: `/Users/kyh/theieum`
+
+## 상태
+
+- 완료:
+- 미완료:
+
+## 변경 파일
+
+- `.gitignore`
+- `.dockerignore`
+- `backend/.dockerignore`
+- `backend/Dockerfile`
+- `frontend/Dockerfile`
+- `docker/nginx.conf`
+- `docker-compose.yml`
+- `README.md`
+- `docs/handoff-2026-06-03.md`
+
+## 검증 결과
+
+```bash
+docker compose config
+docker compose up --build
+curl -I http://localhost:3000
+curl -i http://localhost:8080/api/auth/login
+git diff --check
+```
+
+## 다음 작업
+
+Task 12 Playwright E2E 업무 흐름 검증으로 진행한다.
+```
+
+Update `docs/handoff-2026-06-03.md` to point to this task handoff.
+
+- [ ] **Step 10: Commit**
 
 Run:
 
 ```bash
-git add docker-compose.yml backend/Dockerfile frontend/Dockerfile docker README.md
-git commit -m "chore: add docker execution harness"
+git add docs/handoff-2026-06-03.md docs/handoffs/2026-06-03-task-11-docker-execution-harness.md docs/superpowers/plans/2026-06-03-receipt-approval-app-implementation.md
+git commit -m "docs: add task handoff workflow"
 ```
 
 ---
