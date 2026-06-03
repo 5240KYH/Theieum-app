@@ -2,6 +2,12 @@
 
 Spring Boot, React/Vite, PostgreSQL 기반 전자결재 MVP입니다.
 
+## 문서
+
+- [관리자 운영 가이드](docs/admin-user-guide.md): 실행, 배포, 관리자 이용, 운영 점검 절차
+- [배포 전 체크리스트](docs/deployment-readiness-checklist.md): 운영 후보 배포 전 확인 항목
+- [반려 재상신 구현 계획](docs/superpowers/plans/2026-06-03-rejected-application-resubmission.md): 반려 신청서 재상신 후속 구현 plan
+
 ## 로컬 실행
 
 ```bash
