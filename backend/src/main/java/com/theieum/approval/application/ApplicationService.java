@@ -81,8 +81,9 @@ public class ApplicationService {
         if (!application.getApplicant().getId().equals(command.actorId())) {
             throw new ForbiddenOperationException("Only the applicant can update this application");
         }
-        if (application.getStatus() != ApplicationStatus.DRAFT) {
-            throw new WorkflowConflictException("Only draft applications can be updated");
+        if (application.getStatus() != ApplicationStatus.DRAFT
+                && application.getStatus() != ApplicationStatus.CANCELED) {
+            throw new WorkflowConflictException("Only editable applications can be updated");
         }
         ApprovalType approvalType = entityManager.find(ApprovalType.class, command.approvalTypeId());
         if (approvalType == null || !approvalType.isActive()) {
@@ -235,8 +236,8 @@ public class ApplicationService {
         ApplicationApprovalStep step = findApprovalStep(stepId);
         User admin = findActiveUser(adminId);
         Instant actedAt = Instant.now();
-        if (!admin.getRoleList().contains("ADMIN")) {
-            throw new ForbiddenOperationException("Only admins can perform admin approval");
+        if (!hasManagementRole(admin)) {
+            throw new ForbiddenOperationException("Only admins or managers can perform admin approval");
         }
         validateApplicationInApproval(step.getApplication());
         validateCurrentPendingStep(step);
@@ -255,6 +256,12 @@ public class ApplicationService {
         notificationEventService.createAdminApproved(step.getApplication());
         advanceAfterApprovedStep(step.getApplication(), actedAt);
         return step.getApplication();
+    }
+
+    private boolean hasManagementRole(User user) {
+        return user.getRoleList().stream()
+                .map(role -> role.trim().toUpperCase())
+                .anyMatch(role -> role.equals("ADMIN") || role.equals("MANAGER") || role.equals("MANGER"));
     }
 
     private Application findApplication(long applicationId) {

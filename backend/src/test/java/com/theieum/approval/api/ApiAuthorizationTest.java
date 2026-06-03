@@ -2,6 +2,7 @@ package com.theieum.approval.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -21,6 +22,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -51,6 +53,9 @@ class ApiAuthorizationTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
     @Test
     void applicantCannotApproveOthersPendingStep() throws Exception {
@@ -351,6 +356,188 @@ class ApiAuthorizationTest {
     }
 
     @Test
+    void managerCanManageNonUserAdminReferencesButApplicantsCannotAccessThem() throws Exception {
+        String applicantToken = login("employee01");
+        long managerId = createRoleTestUser("reference-manager", "MANAGER,APPLICANT");
+        String managerToken = login("reference-manager");
+
+        mockMvc.perform(get("/api/admin/approval-lines")
+                        .header("Authorization", bearer(applicantToken)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/admin/approval-lines")
+                        .header("Authorization", bearer(managerToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].name").value("영수증 첨부 신청 기본 결재선"));
+
+        mockMvc.perform(put("/api/admin/positions/1")
+                        .header("Authorization", bearer(applicantToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "수정된 사원",
+                                  "rankOrder": 11,
+                                  "sortOrder": 11,
+                                  "active": true
+                                }
+                                """))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(put("/api/admin/positions/1")
+                        .header("Authorization", bearer(managerToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "수정된 사원",
+                                  "rankOrder": 11,
+                                  "sortOrder": 11,
+                                  "active": false
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.name").value("수정된 사원"))
+                .andExpect(jsonPath("$.rank_order").value(11))
+                .andExpect(jsonPath("$.active").value(false));
+
+        mockMvc.perform(delete("/api/admin/positions/1")
+                        .header("Authorization", bearer(managerToken)))
+                .andExpect(status().isNoContent());
+
+        assertThat(activeFlag("positions", 1L)).isFalse();
+        assertThat(managerId).isPositive();
+    }
+
+    @Test
+    void managerCanReadUsersButOnlyAdminCanMutateUsersAndPasswords() throws Exception {
+        long managerId = createRoleTestUser("user-manager", "MANAGER,APPLICANT");
+        String managerToken = login("user-manager");
+        String adminToken = login("admin");
+
+        mockMvc.perform(get("/api/admin/users")
+                        .header("Authorization", bearer(managerToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].login_id").exists());
+
+        mockMvc.perform(put("/api/admin/users/{id}", managerId)
+                        .header("Authorization", bearer(managerToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "loginId": "user-manager",
+                                  "name": "수정 시도",
+                                  "email": "user-manager@theieum.local",
+                                  "organizationId": 3,
+                                  "positionId": 1,
+                                  "roles": "MANAGER,APPLICANT",
+                                  "active": true
+                                }
+                                """))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(put("/api/admin/users/{id}/password", managerId)
+                        .header("Authorization", bearer(managerToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "newPassword": "changed-password"
+                                }
+                                """))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(delete("/api/admin/users/{id}", managerId)
+                        .header("Authorization", bearer(managerToken)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(put("/api/admin/users/{id}/password", managerId)
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "newPassword": "changed-password"
+                                }
+                                """))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void adminCanChangeManagedUserPassword() throws Exception {
+        long managedUserId = createPasswordTestUser("password-admin-target");
+        String adminToken = login("admin");
+        String applicantToken = login("employee01");
+
+        mockMvc.perform(put("/api/admin/users/{id}/password", managedUserId)
+                        .header("Authorization", bearer(applicantToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "newPassword": "changed-password"
+                                }
+                                """))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(put("/api/admin/users/{id}/password", managedUserId)
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "newPassword": "changed-password"
+                                }
+                                """))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "loginId": "password-admin-target",
+                                  "password": "password"
+                                }
+                                """))
+                .andExpect(status().isUnauthorized());
+        assertThat(login("password-admin-target", "changed-password")).isNotBlank();
+    }
+
+    @Test
+    void userCanChangeOwnPasswordWithCurrentPassword() throws Exception {
+        createPasswordTestUser("password-self-target");
+        String applicantToken = login("password-self-target");
+
+        mockMvc.perform(post("/api/me/password")
+                        .header("Authorization", bearer(applicantToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "currentPassword": "wrong-password",
+                                  "newPassword": "self-changed-password"
+                                }
+                                """))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(post("/api/me/password")
+                        .header("Authorization", bearer(applicantToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "currentPassword": "password",
+                                  "newPassword": "self-changed-password"
+                                }
+                                """))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "loginId": "password-self-target",
+                                  "password": "password"
+                                }
+                                """))
+                .andExpect(status().isUnauthorized());
+        assertThat(login("password-self-target", "self-changed-password")).isNotBlank();
+    }
+
+    @Test
     void applicantCanUpdateOwnDraftOnly() throws Exception {
         Application application = applicationService.createDraft(new ApplicationService.CreateDraftCommand(
                 3L,
@@ -395,6 +582,66 @@ class ApiAuthorizationTest {
                 .andExpect(jsonPath("$.description").value("수정된 식대"));
 
         assertThat(applicationVendor(application.getId())).isEqualTo("수정 상점");
+    }
+
+    @Test
+    void applicantCanReviseCanceledApplicationButNotInApprovalApprovedOrRejected() throws Exception {
+        Application canceled = applicationService.createDraft(new ApplicationService.CreateDraftCommand(
+                3L,
+                1L,
+                LocalDate.of(2026, 6, 3),
+                LocalDate.of(2026, 6, 2),
+                "취소 전 상점",
+                new BigDecimal("12500.00"),
+                "취소 전 내용"));
+        applicationService.cancelDraft(canceled.getId(), 3L);
+        String applicantToken = login("employee01");
+
+        mockMvc.perform(put("/api/applications/{id}", canceled.getId())
+                        .header("Authorization", bearer(applicantToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "applicationDate": "2026-06-04",
+                                  "receiptDate": "2026-06-03",
+                                  "vendor": "재작성 상점",
+                                  "amount": 22000,
+                                  "description": "재작성 내용"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.vendor").value("재작성 상점"))
+                .andExpect(jsonPath("$.status").value("DRAFT"));
+
+        long inApprovalId = submitApplication(3L, 1L);
+        mockMvc.perform(put("/api/applications/{id}", inApprovalId)
+                        .header("Authorization", bearer(applicantToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "applicationDate": "2026-06-04",
+                                  "receiptDate": "2026-06-03",
+                                  "vendor": "진행중 수정",
+                                  "amount": 22000,
+                                  "description": "진행중 수정"
+                                }
+                                """))
+                .andExpect(status().isConflict());
+
+        applicationService.adminApprove(stepId(inApprovalId, 1), 1L, "관리자 승인");
+        mockMvc.perform(put("/api/applications/{id}", inApprovalId)
+                        .header("Authorization", bearer(applicantToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "applicationDate": "2026-06-04",
+                                  "receiptDate": "2026-06-03",
+                                  "vendor": "완료 수정",
+                                  "amount": 22000,
+                                  "description": "완료 수정"
+                                }
+                                """))
+                .andExpect(status().isConflict());
     }
 
     @Test
@@ -467,14 +714,18 @@ class ApiAuthorizationTest {
     }
 
     private String login(String loginId) throws Exception {
+        return login(loginId, "password");
+    }
+
+    private String login(String loginId, String password) throws Exception {
         String response = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
                                   "loginId": "%s",
-                                  "password": "password"
+                                  "password": "%s"
                                 }
-                                """.formatted(loginId)))
+                                """.formatted(loginId, password)))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
@@ -550,6 +801,41 @@ class ApiAuthorizationTest {
                 "select status from applications where id = ?",
                 String.class,
                 applicationId);
+    }
+
+    private boolean activeFlag(String tableName, long id) {
+        return jdbcTemplate.queryForObject(
+                "select active from " + tableName + " where id = ?",
+                Boolean.class,
+                id);
+    }
+
+    private long createPasswordTestUser(String loginId) {
+        return createRoleTestUser(loginId, "APPLICANT");
+    }
+
+    private long createRoleTestUser(String loginId, String roles) {
+        return jdbcTemplate.queryForObject(
+                """
+                insert into users (
+                    login_id,
+                    external_subject,
+                    password_hash,
+                    name,
+                    email,
+                    organization_id,
+                    position_id,
+                    roles,
+                    active
+                ) values (?, null, ?, ?, ?, 3, 1, ?, true)
+                returning id
+                """,
+                Long.class,
+                loginId,
+                passwordEncoder.encode("password"),
+                loginId,
+                loginId + "@theieum.local",
+                roles);
     }
 
     private long attachmentId(long applicationId) {

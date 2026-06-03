@@ -169,6 +169,47 @@ describe('ApplicationDetailPage', () => {
     }));
   });
 
+  it('취소된 신청서는 다시 수정할 수 있지만 결재 진행중 신청서는 수정할 수 없다', async () => {
+    const canceledResponse = {
+      ...applicationResponse,
+      id: 101,
+      status: 'CANCELED',
+      completedAt: '2026-06-03T01:10:00Z',
+      attachments: []
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === '/api/applications/101') {
+        return new Response(JSON.stringify(canceledResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      if (String(input) === '/api/applications/100') {
+        return new Response(JSON.stringify({
+          ...applicationResponse,
+          attachments: []
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      return new Response(null, { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    window.history.pushState({}, '', '/applications/101');
+    render(<App />);
+
+    expect(await screen.findByRole('link', { name: '수정' })).toHaveAttribute('href', '/applications/101/edit');
+
+    cleanup();
+    window.history.pushState({}, '', '/applications/100');
+    render(<App />);
+
+    expect(await screen.findByText('결재중')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '수정' })).not.toBeInTheDocument();
+  });
+
   it('결재 이력에서 실제 처리자와 관리자 예외 사유를 표시한다', async () => {
     const auditedResponse = {
       ...applicationResponse,

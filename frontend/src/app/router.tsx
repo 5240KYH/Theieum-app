@@ -22,6 +22,7 @@ export function AppRoutes() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route element={<ProtectedRoute requiredRole="APPLICANT" />}>
             <Route path="/applications/new" element={<ApplicationForm />} />
+            <Route path="/applications/:id/edit" element={<ApplicationForm />} />
             <Route path="/applications/my" element={<MyApplicationsPage />} />
           </Route>
           <Route element={<ProtectedRoute requiredAnyRole={['APPLICANT', 'APPROVER', 'ADMIN']} />}>
@@ -30,7 +31,7 @@ export function AppRoutes() {
           <Route element={<ProtectedRoute requiredRole="APPROVER" />}>
             <Route path="/approvals" element={<ApprovalsInboxPage />} />
           </Route>
-          <Route element={<ProtectedRoute requiredRole="ADMIN" />}>
+          <Route element={<ProtectedRoute requiredAnyRole={['ADMIN', 'MANAGER']} />}>
             <Route path="/admin/users" element={<AdminReferencePage kind="users" />} />
             <Route path="/admin/organizations" element={<AdminReferencePage kind="organizations" />} />
             <Route path="/admin/positions" element={<AdminReferencePage kind="positions" />} />

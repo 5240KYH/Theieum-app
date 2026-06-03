@@ -106,8 +106,8 @@ public class Application {
             BigDecimal amount,
             String description,
             Instant updatedAt) {
-        if (status != ApplicationStatus.DRAFT) {
-            throw new IllegalStateException("Only draft applications can be updated");
+        if (status != ApplicationStatus.DRAFT && status != ApplicationStatus.CANCELED) {
+            throw new IllegalStateException("Only editable applications can be updated");
         }
         this.approvalType = approvalType;
         this.applicationDate = applicationDate;
@@ -115,6 +115,8 @@ public class Application {
         this.vendor = vendor;
         this.amount = amount;
         this.description = description;
+        this.status = ApplicationStatus.DRAFT;
+        this.completedAt = null;
         this.updatedAt = updatedAt;
     }
 

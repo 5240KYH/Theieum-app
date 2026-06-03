@@ -122,7 +122,25 @@ describe('LoginPage', () => {
     });
   });
 
-  it('일반 사용자는 관리자 경로에 직접 접근해도 대시보드로 이동한다', async () => {
+  it('일반 사용자는 관리자 전용 경로에 직접 접근해도 대시보드로 이동한다', async () => {
+    localStorage.setItem('accessToken', 'employee-token');
+    localStorage.setItem('authUser', JSON.stringify({
+      id: 3,
+      loginId: 'employee01',
+      name: '직원01',
+      roles: ['APPLICANT']
+    }));
+    window.history.pushState({}, '', '/admin/applications');
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: '대시보드' })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('heading', { name: '전체 신청서 관리' })).not.toBeInTheDocument();
+  });
+
+  it('일반 사용자는 기준정보 관리 경로에 직접 접근해도 대시보드로 이동한다', async () => {
     localStorage.setItem('accessToken', 'employee-token');
     localStorage.setItem('authUser', JSON.stringify({
       id: 3,

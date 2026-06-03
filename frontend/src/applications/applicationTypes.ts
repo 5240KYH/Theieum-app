@@ -74,6 +74,10 @@ export function applicationStatusLabel(status: ApplicationStatus) {
   return labels[status] ?? status;
 }
 
+export function canEditApplication(status: ApplicationStatus) {
+  return status !== 'IN_APPROVAL' && status !== 'APPROVED' && status !== 'REJECTED';
+}
+
 export function approvalStepStatusLabel(status: ApprovalStepStatus) {
   const labels: Record<string, string> = {
     PENDING: '대기',

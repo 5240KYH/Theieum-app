@@ -62,6 +62,11 @@ function readStoredSession(): AuthSession {
   }
 }
 
+function normalizeRole(role: string) {
+  const normalized = role.trim().toUpperCase();
+  return normalized === 'MANGER' ? 'MANAGER' : normalized;
+}
+
 export function AuthProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<AuthSession>(() => readStoredSession());
 
@@ -74,6 +79,37 @@ export function AuthProvider({ children }: PropsWithChildren) {
     window.addEventListener('auth:unauthorized', logout);
     return () => window.removeEventListener('auth:unauthorized', logout);
   }, []);
+
+  useEffect(() => {
+    if (!session.token) {
+      return undefined;
+    }
+
+    let ignore = false;
+
+    async function refreshUser() {
+      try {
+        const user = await api<AuthenticatedUser>('/me');
+        if (ignore) {
+          return;
+        }
+        if (!isAuthenticatedUser(user)) {
+          return;
+        }
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+        setSession((current) => current.token === session.token ? { ...current, user } : current);
+      } catch {
+        // api() dispatches auth:unauthorized for expired sessions. Other failures keep the current session usable.
+      }
+    }
+
+    void refreshUser();
+
+    return () => {
+      ignore = true;
+    };
+  }, [session.token]);
+
 
   const value = useMemo<AuthContextValue>(() => {
     async function login(loginId: string, password: string) {
@@ -88,7 +124,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
 
     function hasRole(role: string) {
-      return session.user?.roles.includes(role) ?? false;
+      const targetRole = normalizeRole(role);
+      return session.user?.roles?.some((userRole) => normalizeRole(userRole) === targetRole) ?? false;
     }
 
     return {

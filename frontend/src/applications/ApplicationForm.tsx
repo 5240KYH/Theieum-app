@@ -1,11 +1,11 @@
 import { ChangeEvent, FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Eye, FileImage, Save, Send, Trash2, X } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 
 import { useAuth } from '../auth/AuthContext';
 import { ApiError } from '../shared/api';
-import { attachReceiptImage, createApplication, submitApplication, updateApplication } from './applicationApi';
-import { ApplicationResponse } from './applicationTypes';
+import { attachReceiptImage, createApplication, getApplication, submitApplication, updateApplication } from './applicationApi';
+import { ApplicationResponse, canEditApplication } from './applicationTypes';
 
 const MAX_RECEIPT_IMAGE_BYTES = 5 * 1024 * 1024;
 const SUPPORTED_RECEIPT_IMAGE_TYPES = new Set([
@@ -37,6 +37,7 @@ function errorMessage(error: unknown) {
 export function ApplicationForm() {
   const auth = useAuth();
   const navigate = useNavigate();
+  const { id } = useParams();
   const [applicationDate, setApplicationDate] = useState(today);
   const [receiptDate, setReceiptDate] = useState('');
   const [vendor, setVendor] = useState('');
@@ -48,6 +49,7 @@ export function ApplicationForm() {
   const [draft, setDraft] = useState<ApplicationResponse | null>(null);
   const [draftPayloadSignature, setDraftPayloadSignature] = useState('');
   const [attachedDraftId, setAttachedDraftId] = useState<number | null>(null);
+  const [existingAttachmentCount, setExistingAttachmentCount] = useState(0);
   const [isPreviewOpen, setPreviewOpen] = useState(false);
   const [isSaving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -56,8 +58,61 @@ export function ApplicationForm() {
   const previewCloseButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const isComplete = useMemo(() => {
-    return Boolean(applicationDate && receiptDate && vendor.trim() && amount && description.trim() && receiptFile);
-  }, [amount, applicationDate, description, receiptDate, receiptFile, vendor]);
+    return Boolean(
+      applicationDate
+      && receiptDate
+      && vendor.trim()
+      && amount
+      && description.trim()
+      && (receiptFile || existingAttachmentCount > 0)
+    );
+  }, [amount, applicationDate, description, existingAttachmentCount, receiptDate, receiptFile, vendor]);
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadEditableApplication() {
+      if (!id) {
+        return;
+      }
+
+      setError('');
+      try {
+        const application = await getApplication(id);
+        if (ignore) {
+          return;
+        }
+        if (!canEditApplication(application.status)) {
+          setError('해당 상태의 신청서는 수정할 수 없습니다.');
+          return;
+        }
+        setDraft(application);
+        setApplicationDate(application.applicationDate);
+        setReceiptDate(application.receiptDate);
+        setVendor(application.vendor);
+        setAmount(String(application.amount));
+        setDescription(application.description);
+        setExistingAttachmentCount(application.attachments?.length ?? 0);
+        setDraftPayloadSignature(JSON.stringify({
+          applicationDate: application.applicationDate,
+          receiptDate: application.receiptDate,
+          vendor: application.vendor,
+          amount: Number(application.amount),
+          description: application.description
+        }));
+      } catch (requestError) {
+        if (!ignore) {
+          setError(errorMessage(requestError));
+        }
+      }
+    }
+
+    void loadEditableApplication();
+
+    return () => {
+      ignore = true;
+    };
+  }, [id]);
 
   useEffect(() => {
     if (!receiptFile) {
@@ -221,7 +276,7 @@ export function ApplicationForm() {
       <div className="page-header">
         <div>
           <p className="eyebrow">신청 업무</p>
-          <h1 id="page-title">신청서 작성</h1>
+          <h1 id="page-title">{id ? '신청서 수정' : '신청서 작성'}</h1>
         </div>
         <span className="status-pill">{draft ? '임시저장됨' : '작성 중'}</span>
       </div>
@@ -320,7 +375,7 @@ export function ApplicationForm() {
           ) : (
             <div className="empty-state">
               <FileImage aria-hidden="true" size={22} />
-              <span>첨부된 이미지 없음</span>
+              <span>{existingAttachmentCount > 0 ? `기존 첨부 ${existingAttachmentCount}개` : '첨부된 이미지 없음'}</span>
             </div>
           )}
         </div>

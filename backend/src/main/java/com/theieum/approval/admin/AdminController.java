@@ -5,13 +5,16 @@ import java.util.Map;
 import java.util.Set;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -35,7 +38,7 @@ import jakarta.validation.constraints.Size;
 @RequestMapping("/api/admin")
 public class AdminController {
 
-    private static final Set<String> ALLOWED_ROLES = Set.of("ADMIN", "APPROVER", "APPLICANT");
+    private static final Set<String> ALLOWED_ROLES = Set.of("ADMIN", "MANAGER", "MANGER", "APPROVER", "APPLICANT");
     private static final Set<String> ALLOWED_ORGANIZATION_SCOPES = Set.of("APPLICANT_ORG");
     private static final Set<String> ALLOWED_SORT_POLICIES = Set.of("POSITION_ORDER", "INPUT_ORDER");
 
@@ -61,7 +64,7 @@ public class AdminController {
     @GetMapping("/users")
     @Transactional(readOnly = true)
     public List<Map<String, Object>> users(@AuthenticationPrincipal AuthenticatedUser user) {
-        requireAdmin(user);
+        requireManager(user);
         return jdbcTemplate.queryForList("""
                 select u.id,
                        u.login_id,
@@ -115,10 +118,70 @@ public class AdminController {
         return one("select id, login_id, name, email, organization_id, position_id, roles, active from users where id = ?", id);
     }
 
+    @PutMapping("/users/{id}")
+    @Transactional
+    public Map<String, Object> updateUser(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable long id,
+            @Valid @RequestBody UpdateUserRequest request) {
+        requireAdmin(user);
+        validateUserRequest(request);
+        int updated = jdbcTemplate.update(
+                """
+                update users
+                set login_id = ?,
+                    external_subject = ?,
+                    name = ?,
+                    email = ?,
+                    organization_id = ?,
+                    position_id = ?,
+                    roles = ?,
+                    active = ?
+                where id = ?
+                """,
+                request.loginId,
+                request.externalSubject,
+                request.name,
+                request.email,
+                request.organizationId,
+                request.positionId,
+                request.roles == null || request.roles.isBlank() ? "APPLICANT" : request.roles,
+                request.active == null || request.active,
+                id);
+        requireUpdated(updated, "User not found: " + id);
+        return userRow(id);
+    }
+
+    @PutMapping("/users/{id}/password")
+    @Transactional
+    public ResponseEntity<Void> updateUserPassword(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable long id,
+            @Valid @RequestBody AdminPasswordChangeRequest request) {
+        requireAdmin(user);
+        int updated = jdbcTemplate.update(
+                "update users set password_hash = ? where id = ?",
+                passwordEncoder.encode(request.newPassword),
+                id);
+        requireUpdated(updated, "User not found: " + id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/users/{id}")
+    @Transactional
+    public ResponseEntity<Void> deleteUser(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable long id) {
+        requireAdmin(user);
+        int updated = jdbcTemplate.update("update users set active = false where id = ?", id);
+        requireUpdated(updated, "User not found: " + id);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/organizations")
     @Transactional(readOnly = true)
     public List<Map<String, Object>> organizations(@AuthenticationPrincipal AuthenticatedUser user) {
-        requireAdmin(user);
+        requireManager(user);
         return jdbcTemplate.queryForList("""
                 select id, name, parent_id, level_no, sort_order, active
                 from organizations
@@ -131,7 +194,7 @@ public class AdminController {
     public Map<String, Object> createOrganization(
             @AuthenticationPrincipal AuthenticatedUser user,
             @Valid @RequestBody CreateOrganizationRequest request) {
-        requireAdmin(user);
+        requireManager(user);
         if (request.parentId != null) {
             requireExists("organizations", request.parentId, "Parent organization not found: " + request.parentId);
         }
@@ -150,10 +213,55 @@ public class AdminController {
         return one("select id, name, parent_id, level_no, sort_order, active from organizations where id = ?", id);
     }
 
+    @PutMapping("/organizations/{id}")
+    @Transactional
+    public Map<String, Object> updateOrganization(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable long id,
+            @Valid @RequestBody CreateOrganizationRequest request) {
+        requireManager(user);
+        if (request.parentId != null) {
+            if (request.parentId == id) {
+                throw new IllegalArgumentException("Organization cannot be its own parent");
+            }
+            requireExists("organizations", request.parentId, "Parent organization not found: " + request.parentId);
+        }
+        int levelNo = request.levelNo == null ? organizationLevel(request.parentId) : request.levelNo;
+        int updated = jdbcTemplate.update(
+                """
+                update organizations
+                set name = ?,
+                    parent_id = ?,
+                    level_no = ?,
+                    sort_order = ?,
+                    active = ?
+                where id = ?
+                """,
+                request.name,
+                request.parentId,
+                levelNo,
+                request.sortOrder == null ? nextSortOrder("organizations") : request.sortOrder,
+                request.active == null || request.active,
+                id);
+        requireUpdated(updated, "Organization not found: " + id);
+        return one("select id, name, parent_id, level_no, sort_order, active from organizations where id = ?", id);
+    }
+
+    @DeleteMapping("/organizations/{id}")
+    @Transactional
+    public ResponseEntity<Void> deleteOrganization(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable long id) {
+        requireManager(user);
+        int updated = jdbcTemplate.update("update organizations set active = false where id = ?", id);
+        requireUpdated(updated, "Organization not found: " + id);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/positions")
     @Transactional(readOnly = true)
     public List<Map<String, Object>> positions(@AuthenticationPrincipal AuthenticatedUser user) {
-        requireAdmin(user);
+        requireManager(user);
         return jdbcTemplate.queryForList("""
                 select id, name, rank_order, sort_order, active
                 from positions
@@ -166,7 +274,7 @@ public class AdminController {
     public Map<String, Object> createPosition(
             @AuthenticationPrincipal AuthenticatedUser user,
             @Valid @RequestBody CreatePositionRequest request) {
-        requireAdmin(user);
+        requireManager(user);
         Long id = jdbcTemplate.queryForObject(
                 """
                 insert into positions (name, rank_order, sort_order, active)
@@ -181,10 +289,46 @@ public class AdminController {
         return one("select id, name, rank_order, sort_order, active from positions where id = ?", id);
     }
 
+    @PutMapping("/positions/{id}")
+    @Transactional
+    public Map<String, Object> updatePosition(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable long id,
+            @Valid @RequestBody CreatePositionRequest request) {
+        requireManager(user);
+        int updated = jdbcTemplate.update(
+                """
+                update positions
+                set name = ?,
+                    rank_order = ?,
+                    sort_order = ?,
+                    active = ?
+                where id = ?
+                """,
+                request.name,
+                request.rankOrder == null ? nextSortOrder("positions") : request.rankOrder,
+                request.sortOrder == null ? nextSortOrder("positions") : request.sortOrder,
+                request.active == null || request.active,
+                id);
+        requireUpdated(updated, "Position not found: " + id);
+        return one("select id, name, rank_order, sort_order, active from positions where id = ?", id);
+    }
+
+    @DeleteMapping("/positions/{id}")
+    @Transactional
+    public ResponseEntity<Void> deletePosition(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable long id) {
+        requireManager(user);
+        int updated = jdbcTemplate.update("update positions set active = false where id = ?", id);
+        requireUpdated(updated, "Position not found: " + id);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/approval-lines")
     @Transactional(readOnly = true)
     public List<ApprovalLineResponse> approvalLines(@AuthenticationPrincipal AuthenticatedUser user) {
-        requireAdmin(user);
+        requireManager(user);
         return jdbcTemplate.queryForList("""
                 select id, approval_type_id, name, active
                 from approval_lines
@@ -204,7 +348,7 @@ public class AdminController {
     public ApprovalLineResponse createApprovalLine(
             @AuthenticationPrincipal AuthenticatedUser user,
             @Valid @RequestBody CreateApprovalLineRequest request) {
-        requireAdmin(user);
+        requireManager(user);
         validateApprovalLineRequest(request);
         Long id = jdbcTemplate.queryForObject(
                 """
@@ -245,10 +389,70 @@ public class AdminController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR));
     }
 
+    @PutMapping("/approval-lines/{id}")
+    @Transactional
+    public ApprovalLineResponse updateApprovalLine(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable long id,
+            @Valid @RequestBody CreateApprovalLineRequest request) {
+        requireManager(user);
+        validateApprovalLineRequest(request);
+        int updated = jdbcTemplate.update(
+                """
+                update approval_lines
+                set approval_type_id = ?,
+                    name = ?,
+                    active = ?
+                where id = ?
+                """,
+                request.approvalTypeId,
+                request.name,
+                request.active == null || request.active,
+                id);
+        requireUpdated(updated, "Approval line not found: " + id);
+        jdbcTemplate.update("delete from approval_line_steps where approval_line_id = ?", id);
+        for (CreateApprovalLineStepRequest step : request.steps) {
+            jdbcTemplate.update(
+                    """
+                    insert into approval_line_steps (
+                        approval_line_id,
+                        step_order,
+                        step_type,
+                        organization_scope,
+                        position_id,
+                        direct_user_id,
+                        sort_policy
+                    ) values (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    id,
+                    step.stepOrder,
+                    step.stepType,
+                    step.organizationScope,
+                    step.positionId,
+                    step.directUserId,
+                    step.sortPolicy == null || step.sortPolicy.isBlank() ? "POSITION_ORDER" : step.sortPolicy);
+        }
+        return approvalLines(user).stream()
+                .filter(line -> line.id().equals(id))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR));
+    }
+
+    @DeleteMapping("/approval-lines/{id}")
+    @Transactional
+    public ResponseEntity<Void> deleteApprovalLine(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable long id) {
+        requireManager(user);
+        int updated = jdbcTemplate.update("update approval_lines set active = false where id = ?", id);
+        requireUpdated(updated, "Approval line not found: " + id);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/approval-org-exceptions")
     @Transactional(readOnly = true)
     public List<ApprovalOrgExceptionResponse> approvalOrgExceptions(@AuthenticationPrincipal AuthenticatedUser user) {
-        requireAdmin(user);
+        requireManager(user);
         return approvalOrgExceptionRows();
     }
 
@@ -257,7 +461,7 @@ public class AdminController {
     public ApprovalOrgExceptionResponse createApprovalOrgException(
             @AuthenticationPrincipal AuthenticatedUser user,
             @Valid @RequestBody CreateApprovalOrgExceptionRequest request) {
-        requireAdmin(user);
+        requireManager(user);
         validateApprovalOrgExceptionRequest(request);
         Long id = jdbcTemplate.queryForObject(
                 """
@@ -282,20 +486,62 @@ public class AdminController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR));
     }
 
+    @PutMapping("/approval-org-exceptions/{id}")
+    @Transactional
+    public ApprovalOrgExceptionResponse updateApprovalOrgException(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable long id,
+            @Valid @RequestBody CreateApprovalOrgExceptionRequest request) {
+        requireManager(user);
+        validateApprovalOrgExceptionRequest(request);
+        int updated = jdbcTemplate.update(
+                """
+                update approval_org_exceptions
+                set approval_type_id = ?,
+                    organization_id = ?,
+                    approver_user_id = ?,
+                    step_order = ?,
+                    active = ?
+                where id = ?
+                """,
+                request.approvalTypeId,
+                request.organizationId,
+                request.approverUserId,
+                request.stepOrder,
+                request.active == null || request.active,
+                id);
+        requireUpdated(updated, "Approval organization exception not found: " + id);
+        return approvalOrgExceptionRows().stream()
+                .filter(exception -> exception.id().equals(id))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR));
+    }
+
+    @DeleteMapping("/approval-org-exceptions/{id}")
+    @Transactional
+    public ResponseEntity<Void> deleteApprovalOrgException(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable long id) {
+        requireManager(user);
+        int updated = jdbcTemplate.update("update approval_org_exceptions set active = false where id = ?", id);
+        requireUpdated(updated, "Approval organization exception not found: " + id);
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/approvals/steps/{stepId}/approve")
     @Transactional
     public AdminApprovalResponse adminApprove(
             @AuthenticationPrincipal AuthenticatedUser user,
             @PathVariable long stepId,
             @Valid @RequestBody AdminApprovalRequest request) {
-        requireAdmin(user);
+        requireManager(user);
         return AdminApprovalResponse.from(applicationService.adminApprove(stepId, user.id(), request.reason));
     }
 
     @GetMapping("/applications")
     @Transactional(readOnly = true)
     public List<AdminApplicationResponse> applications(@AuthenticationPrincipal AuthenticatedUser user) {
-        requireAdmin(user);
+        requireManager(user);
         return applicationRepository.findAll()
                 .stream()
                 .map(AdminApplicationResponse::from)
@@ -305,7 +551,7 @@ public class AdminController {
     @GetMapping("/notification-events")
     @Transactional(readOnly = true)
     public List<AdminNotificationEventResponse> notificationEvents(@AuthenticationPrincipal AuthenticatedUser user) {
-        requireAdmin(user);
+        requireManager(user);
         return notificationEventRepository.findAll()
                 .stream()
                 .map(AdminNotificationEventResponse::from)
@@ -370,7 +616,24 @@ public class AdminController {
         return maxSortOrder + 10;
     }
 
+    private int organizationLevel(Long parentId) {
+        if (parentId == null) {
+            return 1;
+        }
+        Integer parentLevel = jdbcTemplate.queryForObject(
+                "select level_no from organizations where id = ?",
+                Integer.class,
+                parentId);
+        return parentLevel + 1;
+    }
+
     private void validateUserRequest(CreateUserRequest request) {
+        requireExists("organizations", request.organizationId, "Organization not found: " + request.organizationId);
+        requireExists("positions", request.positionId, "Position not found: " + request.positionId);
+        validateRoles(request.roles == null || request.roles.isBlank() ? "APPLICANT" : request.roles);
+    }
+
+    private void validateUserRequest(UpdateUserRequest request) {
         requireExists("organizations", request.organizationId, "Organization not found: " + request.organizationId);
         requireExists("positions", request.positionId, "Position not found: " + request.positionId);
         validateRoles(request.roles == null || request.roles.isBlank() ? "APPLICANT" : request.roles);
@@ -470,16 +733,52 @@ public class AdminController {
         return jdbcTemplate.queryForMap(sql, id);
     }
 
+    private Map<String, Object> userRow(long id) {
+        return one("select id, login_id, name, email, organization_id, position_id, roles, active from users where id = ?", id);
+    }
+
+    private void requireUpdated(int updated, String message) {
+        if (updated == 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, message);
+        }
+    }
+
     private void requireAdmin(AuthenticatedUser user) {
-        if (user == null || !user.roles().contains("ADMIN")) {
+        if (!hasRole(user, "ADMIN")) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         }
+    }
+
+    private void requireManager(AuthenticatedUser user) {
+        if (!hasRole(user, "ADMIN") && !hasRole(user, "MANAGER")) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        }
+    }
+
+    private boolean hasRole(AuthenticatedUser user, String role) {
+        if (user == null) {
+            return false;
+        }
+        return user.roles().stream()
+                .map(value -> value.trim().toUpperCase())
+                .anyMatch(value -> value.equals(role) || (role.equals("MANAGER") && value.equals("MANGER")));
     }
 
     public record CreateUserRequest(
             @NotBlank String loginId,
             String externalSubject,
             @NotBlank @Size(min = 8) String password,
+            @NotBlank String name,
+            @NotBlank @Email String email,
+            @NotNull Long organizationId,
+            @NotNull Long positionId,
+            String roles,
+            Boolean active) {
+    }
+
+    public record UpdateUserRequest(
+            @NotBlank String loginId,
+            String externalSubject,
             @NotBlank String name,
             @NotBlank @Email String email,
             @NotNull Long organizationId,
@@ -525,6 +824,9 @@ public class AdminController {
             @NotNull Long approverUserId,
             @Positive int stepOrder,
             Boolean active) {
+    }
+
+    public record AdminPasswordChangeRequest(@NotBlank @Size(min = 8) String newPassword) {
     }
 
     public record AdminApprovalRequest(@NotBlank String reason) {

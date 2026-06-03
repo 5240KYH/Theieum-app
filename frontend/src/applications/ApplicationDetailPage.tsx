@@ -1,6 +1,6 @@
-import { FileImage, RefreshCcw, XCircle } from 'lucide-react';
+import { Edit3, FileImage, RefreshCcw, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 
 import { ApiError } from '../shared/api';
 import { cancelApplication, getApplication, getAttachmentContent } from './applicationApi';
@@ -9,6 +9,7 @@ import {
   ApplicationResponse,
   AttachmentResponse,
   approvalStepStatusLabel,
+  canEditApplication,
   currentApprover,
   hasAdminException
 } from './applicationTypes';
@@ -71,6 +72,12 @@ export function ApplicationDetailPage() {
           <h1 id="page-title">신청서 상세</h1>
         </div>
         <div className="row-actions">
+          {application && canEditApplication(application.status) ? (
+            <Link className="secondary-button" to={`/applications/${application.id}/edit`}>
+              <Edit3 aria-hidden="true" size={16} />
+              수정
+            </Link>
+          ) : null}
           {application?.status === 'DRAFT' ? (
             <button className="secondary-button danger-button" type="button" onClick={handleCancelApplication}>
               <XCircle aria-hidden="true" size={16} />

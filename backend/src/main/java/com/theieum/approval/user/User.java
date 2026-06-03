@@ -98,4 +98,8 @@ public class User {
                 .filter(role -> !role.isBlank())
                 .toList();
     }
+
+    public void changePasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
 }

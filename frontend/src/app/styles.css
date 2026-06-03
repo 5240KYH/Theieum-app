@@ -312,6 +312,8 @@ h1 {
 }
 
 .application-form label,
+.admin-edit-panel label,
+.compact-modal label,
 .wide-field,
 .attachment-field > label {
   color: #2c3847;
@@ -323,6 +325,9 @@ h1 {
 
 .application-form input,
 .application-form textarea,
+.admin-edit-panel input,
+.admin-edit-panel textarea,
+.compact-modal input,
 .inline-field select,
 .wide-field textarea,
 .comment-input {
@@ -340,6 +345,9 @@ h1 {
 
 .application-form input:focus,
 .application-form textarea:focus,
+.admin-edit-panel input:focus,
+.admin-edit-panel textarea:focus,
+.compact-modal input:focus,
 .inline-field select:focus,
 .wide-field textarea:focus,
 .comment-input:focus {
@@ -350,6 +358,22 @@ h1 {
 .application-form input[readonly] {
   background: #f4f7fa;
   color: #526173;
+}
+
+.admin-edit-panel textarea {
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.admin-edit-panel input[type="checkbox"] {
+  min-height: auto;
+  width: 20px;
+}
+
+.tree-cell {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
 }
 
 .attachment-field {
