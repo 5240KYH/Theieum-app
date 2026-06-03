@@ -17,6 +17,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import com.theieum.approval.common.TestDatabaseHarness;
+import com.theieum.approval.common.WorkflowConflictException;
 
 @SpringBootTest(properties = {
         "spring.datasource.url=" + TestDatabaseHarness.JDBC_URL,
@@ -181,7 +182,7 @@ class ApprovalActionTest {
         applicationService.approve(stepId, 18L, "승인합니다");
 
         assertThatThrownBy(() -> applicationService.adminApprove(stepId, 1L, "완료 후 예외 승인"))
-                .isInstanceOf(IllegalStateException.class)
+                .isInstanceOf(WorkflowConflictException.class)
                 .hasMessageContaining("Only in-approval applications can be approved");
     }
 

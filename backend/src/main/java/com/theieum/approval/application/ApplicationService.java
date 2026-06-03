@@ -18,6 +18,9 @@ import com.theieum.approval.attachment.Attachment;
 import com.theieum.approval.attachment.AttachmentRepository;
 import com.theieum.approval.attachment.FileStorage;
 import com.theieum.approval.attachment.StoredFile;
+import com.theieum.approval.common.ForbiddenOperationException;
+import com.theieum.approval.common.ResourceNotFoundException;
+import com.theieum.approval.common.WorkflowConflictException;
 import com.theieum.approval.notification.NotificationEventService;
 import com.theieum.approval.user.User;
 import com.theieum.approval.user.UserRepository;
@@ -60,7 +63,7 @@ public class ApplicationService {
         User applicant = findActiveUser(command.applicantId());
         ApprovalType approvalType = entityManager.find(ApprovalType.class, command.approvalTypeId());
         if (approvalType == null || !approvalType.isActive()) {
-            throw new IllegalStateException("Active approval type not found: " + command.approvalTypeId());
+            throw new ResourceNotFoundException("Active approval type not found: " + command.approvalTypeId());
         }
 
         return applicationRepository.save(new Application(
@@ -81,11 +84,11 @@ public class ApplicationService {
             byte[] bytes) {
         Application application = findApplication(applicationId);
         if (application.getStatus() != ApplicationStatus.DRAFT) {
-            throw new IllegalStateException("Only draft applications can receive attachments");
+            throw new WorkflowConflictException("Only draft applications can receive attachments");
         }
         User uploader = findActiveUser(uploaderId);
         if (!application.getApplicant().getId().equals(uploader.getId())) {
-            throw new IllegalStateException("Only the applicant can attach receipts");
+            throw new ForbiddenOperationException("Only the applicant can attach receipts");
         }
         if (contentType == null || !contentType.startsWith("image/")) {
             throw new IllegalArgumentException("Receipt attachment must be an image");
@@ -105,13 +108,13 @@ public class ApplicationService {
         Application application = findApplication(applicationId);
         User actor = findActiveUser(actorId);
         if (!application.getApplicant().getId().equals(actor.getId())) {
-            throw new IllegalStateException("Only the applicant can submit this application");
+            throw new ForbiddenOperationException("Only the applicant can submit this application");
         }
         if (application.getStatus() != ApplicationStatus.DRAFT) {
-            throw new IllegalStateException("Only draft applications can be submitted");
+            throw new WorkflowConflictException("Only draft applications can be submitted");
         }
         if (!attachmentRepository.existsByApplicationIdAndMimeTypeStartingWith(applicationId, "image/")) {
-            throw new IllegalStateException("Receipt image attachment is required");
+            throw new WorkflowConflictException("Receipt image attachment is required");
         }
 
         List<ResolvedApprover> approvers = approvalLineResolver.resolve(
@@ -133,7 +136,7 @@ public class ApplicationService {
 
         ApplicationApprovalStep firstStep = approvalSteps.stream()
                 .min(Comparator.comparingInt(ApplicationApprovalStep::getStepOrder))
-                .orElseThrow(() -> new IllegalStateException("Approval line has no approvers"));
+                .orElseThrow(() -> new WorkflowConflictException("Approval line has no approvers"));
         notificationEventService.createApprovalRequested(submitted, firstStep.getOriginalApprover());
 
         return submitted;
@@ -146,7 +149,7 @@ public class ApplicationService {
         validateApplicationInApproval(step.getApplication());
         validateCurrentPendingStep(step);
         if (!step.getOriginalApprover().getId().equals(actor.getId())) {
-            throw new IllegalStateException("Only the current approver can approve this step");
+            throw new ForbiddenOperationException("Only the current approver can approve this step");
         }
 
         step.approve(actedAt);
@@ -172,7 +175,7 @@ public class ApplicationService {
         validateApplicationInApproval(step.getApplication());
         validateCurrentPendingStep(step);
         if (!step.getOriginalApprover().getId().equals(actor.getId())) {
-            throw new IllegalStateException("Only the current approver can reject this step");
+            throw new ForbiddenOperationException("Only the current approver can reject this step");
         }
 
         step.reject(actedAt);
@@ -197,7 +200,7 @@ public class ApplicationService {
         User admin = findActiveUser(adminId);
         Instant actedAt = Instant.now();
         if (!admin.getRoleList().contains("ADMIN")) {
-            throw new IllegalStateException("Only admins can perform admin approval");
+            throw new ForbiddenOperationException("Only admins can perform admin approval");
         }
         validateApplicationInApproval(step.getApplication());
         validateCurrentPendingStep(step);
@@ -220,44 +223,44 @@ public class ApplicationService {
 
     private Application findApplication(long applicationId) {
         return applicationRepository.findById(applicationId)
-                .orElseThrow(() -> new IllegalStateException("Application not found: " + applicationId));
+                .orElseThrow(() -> new ResourceNotFoundException("Application not found: " + applicationId));
     }
 
     private ApplicationApprovalStep findApprovalStep(long stepId) {
         Long applicationId = approvalStepRepository.findApplicationIdByStepId(stepId);
         if (applicationId == null) {
-            throw new IllegalStateException("Approval step not found: " + stepId);
+            throw new ResourceNotFoundException("Approval step not found: " + stepId);
         }
         return approvalStepRepository.findLockedByApplicationIdOrderByStepOrderAsc(applicationId)
                 .stream()
                 .filter(step -> step.getId().equals(stepId))
                 .findFirst()
-                .orElseThrow(() -> new IllegalStateException("Approval step not found: " + stepId));
+                .orElseThrow(() -> new ResourceNotFoundException("Approval step not found: " + stepId));
     }
 
     private User findActiveUser(long userId) {
         return userRepository.findByIdAndActiveTrue(userId)
-                .orElseThrow(() -> new IllegalStateException("Active user not found: " + userId));
+                .orElseThrow(() -> new ResourceNotFoundException("Active user not found: " + userId));
     }
 
     private void validateApplicationInApproval(Application application) {
         if (application.getStatus() != ApplicationStatus.IN_APPROVAL) {
-            throw new IllegalStateException("Only in-approval applications can be approved");
+            throw new WorkflowConflictException("Only in-approval applications can be approved");
         }
     }
 
     private void validateCurrentPendingStep(ApplicationApprovalStep step) {
         if (step.getStatus() != ApprovalStepStatus.PENDING) {
-            throw new IllegalStateException("Only pending approval steps can be processed");
+            throw new WorkflowConflictException("Only pending approval steps can be processed");
         }
         ApplicationApprovalStep currentStep = approvalStepRepository
                 .findLockedByApplicationIdOrderByStepOrderAsc(step.getApplication().getId())
                 .stream()
                 .filter(candidate -> candidate.getStatus() == ApprovalStepStatus.PENDING)
                 .findFirst()
-                .orElseThrow(() -> new IllegalStateException("No pending approval step exists"));
+                .orElseThrow(() -> new WorkflowConflictException("No pending approval step exists"));
         if (!Objects.equals(currentStep.getId(), step.getId())) {
-            throw new IllegalStateException("Only the current approval step can be processed");
+            throw new WorkflowConflictException("Only the current approval step can be processed");
         }
     }
 

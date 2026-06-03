@@ -32,6 +32,8 @@ import jakarta.validation.constraints.Positive;
 @RequestMapping("/api/applications")
 public class ApplicationController {
 
+    private static final long MAX_RECEIPT_IMAGE_BYTES = 5 * 1024 * 1024;
+
     private final ApplicationService applicationService;
     private final ApplicationRepository applicationRepository;
     private final ApplicationApprovalStepRepository approvalStepRepository;
@@ -83,19 +85,16 @@ public class ApplicationController {
         if (contentType == null || !contentType.startsWith("image/")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Receipt attachment must be an image");
         }
-        try {
-            Attachment attachment = applicationService.attachReceiptImage(
-                    id,
-                    user.id(),
-                    file.getOriginalFilename(),
-                    contentType,
-                    file.getBytes());
-            return AttachmentResponse.from(attachment);
-        } catch (IllegalArgumentException exception) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
-        } catch (IllegalStateException exception) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, exception.getMessage(), exception);
+        if (file.getSize() > MAX_RECEIPT_IMAGE_BYTES) {
+            throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "Receipt attachment must be 5MB or smaller");
         }
+        Attachment attachment = applicationService.attachReceiptImage(
+                id,
+                user.id(),
+                file.getOriginalFilename(),
+                contentType,
+                file.getBytes());
+        return AttachmentResponse.from(attachment);
     }
 
     @PostMapping("/{id}/submit")
@@ -104,13 +103,7 @@ public class ApplicationController {
             @AuthenticationPrincipal AuthenticatedUser user,
             @PathVariable long id) {
         requireRole(user, "APPLICANT");
-        try {
-            return toResponse(applicationService.submit(id, user.id()));
-        } catch (IllegalArgumentException exception) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
-        } catch (IllegalStateException exception) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, exception.getMessage(), exception);
-        }
+        return toResponse(applicationService.submit(id, user.id()));
     }
 
     @GetMapping("/{id}")
@@ -141,7 +134,7 @@ public class ApplicationController {
         }
         return hasRole(user, "ADMIN")
                 || application.getApplicant().getId().equals(user.id())
-                || approvalStepRepository.existsByApplicationIdAndOriginalApproverId(application.getId(), user.id());
+                || approvalStepRepository.existsReadableByApplicationIdAndApproverId(application.getId(), user.id());
     }
 
     private void requireRole(AuthenticatedUser user, String role) {

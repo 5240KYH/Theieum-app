@@ -43,7 +43,7 @@ public class ApprovalController {
     public List<ApprovalInboxItemResponse> inbox(@AuthenticationPrincipal AuthenticatedUser user) {
         requireRole(user, "APPROVER");
         return approvalStepRepository
-                .findByOriginalApproverIdAndStatusOrderByApplicationCreatedAtDesc(
+                .findCurrentByOriginalApproverIdAndStatusOrderByApplicationCreatedAtDesc(
                         user.id(),
                         ApprovalStepStatus.PENDING)
                 .stream()
@@ -58,13 +58,7 @@ public class ApprovalController {
             @PathVariable long stepId,
             @Valid @RequestBody ApprovalActionRequest request) {
         requireRole(user, "APPROVER");
-        try {
-            return ApprovalActionResponse.from(applicationService.approve(stepId, user.id(), request.comment()));
-        } catch (IllegalArgumentException exception) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
-        } catch (IllegalStateException exception) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, exception.getMessage(), exception);
-        }
+        return ApprovalActionResponse.from(applicationService.approve(stepId, user.id(), request.comment()));
     }
 
     @PostMapping("/steps/{stepId}/reject")
@@ -74,13 +68,7 @@ public class ApprovalController {
             @PathVariable long stepId,
             @Valid @RequestBody ApprovalActionRequest request) {
         requireRole(user, "APPROVER");
-        try {
-            return ApprovalActionResponse.from(applicationService.reject(stepId, user.id(), request.comment()));
-        } catch (IllegalArgumentException exception) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
-        } catch (IllegalStateException exception) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, exception.getMessage(), exception);
-        }
+        return ApprovalActionResponse.from(applicationService.reject(stepId, user.id(), request.comment()));
     }
 
     private void requireRole(AuthenticatedUser user, String role) {

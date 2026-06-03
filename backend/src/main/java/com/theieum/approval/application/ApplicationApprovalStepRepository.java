@@ -12,11 +12,45 @@ public interface ApplicationApprovalStepRepository extends JpaRepository<Applica
 
     List<ApplicationApprovalStep> findByApplicationIdOrderByStepOrderAsc(Long applicationId);
 
-    List<ApplicationApprovalStep> findByOriginalApproverIdAndStatusOrderByApplicationCreatedAtDesc(
-            Long originalApproverId,
-            com.theieum.approval.approval.ApprovalStepStatus status);
+    @Query("""
+            select step
+            from ApplicationApprovalStep step
+            where step.originalApprover.id = :originalApproverId
+              and step.status = :status
+              and step.application.status = com.theieum.approval.application.ApplicationStatus.IN_APPROVAL
+              and step.stepOrder = (
+                  select min(candidate.stepOrder)
+                  from ApplicationApprovalStep candidate
+                  where candidate.application.id = step.application.id
+                    and candidate.status = :status
+              )
+            order by step.application.createdAt desc
+            """)
+    List<ApplicationApprovalStep> findCurrentByOriginalApproverIdAndStatusOrderByApplicationCreatedAtDesc(
+            @Param("originalApproverId") Long originalApproverId,
+            @Param("status") com.theieum.approval.approval.ApprovalStepStatus status);
 
-    boolean existsByApplicationIdAndOriginalApproverId(Long applicationId, Long originalApproverId);
+    @Query("""
+            select count(step) > 0
+            from ApplicationApprovalStep step
+            where step.application.id = :applicationId
+              and step.originalApprover.id = :approverId
+              and (
+                  step.status <> com.theieum.approval.approval.ApprovalStepStatus.PENDING
+                  or (
+                      step.application.status = com.theieum.approval.application.ApplicationStatus.IN_APPROVAL
+                      and step.stepOrder = (
+                      select min(candidate.stepOrder)
+                      from ApplicationApprovalStep candidate
+                      where candidate.application.id = step.application.id
+                        and candidate.status = com.theieum.approval.approval.ApprovalStepStatus.PENDING
+                      )
+                  )
+              )
+            """)
+    boolean existsReadableByApplicationIdAndApproverId(
+            @Param("applicationId") Long applicationId,
+            @Param("approverId") Long approverId);
 
     @Query("select step.application.id from ApplicationApprovalStep step where step.id = :id")
     Long findApplicationIdByStepId(@Param("id") Long id);

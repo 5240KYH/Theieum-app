@@ -73,3 +73,11 @@ insert into approval_org_exceptions (
     active
 ) values
     (1, 1, 3, 18, 2, true);
+
+select setval(pg_get_serial_sequence('positions', 'id'), (select max(id) from positions));
+select setval(pg_get_serial_sequence('organizations', 'id'), (select max(id) from organizations));
+select setval(pg_get_serial_sequence('approval_types', 'id'), (select max(id) from approval_types));
+select setval(pg_get_serial_sequence('users', 'id'), (select max(id) from users));
+select setval(pg_get_serial_sequence('approval_lines', 'id'), (select max(id) from approval_lines));
+select setval(pg_get_serial_sequence('approval_line_steps', 'id'), (select max(id) from approval_line_steps));
+select setval(pg_get_serial_sequence('approval_org_exceptions', 'id'), (select max(id) from approval_org_exceptions));

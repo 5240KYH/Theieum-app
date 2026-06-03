@@ -2,6 +2,7 @@ package com.theieum.approval.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -18,8 +19,10 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.theieum.approval.application.Application;
 import com.theieum.approval.application.ApplicationService;
 import com.theieum.approval.common.TestDatabaseHarness;
@@ -44,6 +47,9 @@ class ApiAuthorizationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Test
     void applicantCannotApproveOthersPendingStep() throws Exception {
@@ -135,6 +141,132 @@ class ApiAuthorizationTest {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    void approverInboxShowsOnlyCurrentActionableSteps() throws Exception {
+        long applicationId = submitApplication(9L, 1L);
+        String firstApproverToken = login("approver01");
+        String nextApproverToken = login("lead-sales");
+
+        mockMvc.perform(get("/api/approvals/inbox")
+                        .header("Authorization", bearer(nextApproverToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+
+        mockMvc.perform(post("/api/approvals/steps/{stepId}/approve", stepId(applicationId, 1))
+                        .header("Authorization", bearer(firstApproverToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "comment": "1차 승인"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/approvals/inbox")
+                        .header("Authorization", bearer(nextApproverToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].stepId").value(stepId(applicationId, 2)));
+    }
+
+    @Test
+    void rejectedApplicationDoesNotExposeFutureSteps() throws Exception {
+        long applicationId = submitApplication(9L, 1L);
+        String firstApproverToken = login("approver01");
+        String nextApproverToken = login("lead-sales");
+
+        mockMvc.perform(post("/api/approvals/steps/{stepId}/reject", stepId(applicationId, 1))
+                        .header("Authorization", bearer(firstApproverToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "comment": "영수증 정보가 부족합니다"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/approvals/inbox")
+                        .header("Authorization", bearer(nextApproverToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+
+        mockMvc.perform(get("/api/applications/{id}", applicationId)
+                        .header("Authorization", bearer(nextApproverToken)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void approvalActionReturnsFrontendFriendlyStatusCodes() throws Exception {
+        long applicationId = submitApplication(3L, 1L);
+        String applicantToken = login("employee01");
+        String approverToken = login("approver01");
+
+        mockMvc.perform(post("/api/approvals/steps/{stepId}/approve", 999_999L)
+                        .header("Authorization", bearer(approverToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "comment": "없는 단계"
+                                }
+                                """))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(post("/api/applications/{id}/submit", applicationId)
+                        .header("Authorization", bearer(applicantToken)))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void adminApprovalLineRejectsInvalidStepConfiguration() throws Exception {
+        String adminToken = login("admin");
+        int beforeCount = approvalLineStepCount();
+
+        mockMvc.perform(post("/api/admin/approval-lines")
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "approvalTypeId": 1,
+                                  "name": "잘못된 결재선",
+                                  "steps": [
+                                    {
+                                      "stepOrder": 1,
+                                      "stepType": "DIRECT_USER",
+                                      "sortPolicy": "POSITION_ORDER"
+                                    }
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+
+        assertThat(approvalLineStepCount()).isEqualTo(beforeCount);
+    }
+
+    @Test
+    void receiptAttachmentRejectsOversizedImages() throws Exception {
+        Application application = applicationService.createDraft(new ApplicationService.CreateDraftCommand(
+                3L,
+                1L,
+                LocalDate.of(2026, 6, 3),
+                LocalDate.of(2026, 6, 2),
+                "테스트 상점",
+                new BigDecimal("12500.00"),
+                "점심 식대"));
+        String applicantToken = login("employee01");
+        byte[] oversizedPng = new byte[5 * 1024 * 1024 + 9];
+        System.arraycopy(pngBytes(), 0, oversizedPng, 0, pngBytes().length);
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "large-receipt.png",
+                "image/png",
+                oversizedPng);
+
+        mockMvc.perform(multipart("/api/applications/{id}/attachments", application.getId())
+                        .file(file)
+                        .header("Authorization", bearer(applicantToken)))
+                .andExpect(status().isPayloadTooLarge());
+    }
+
     private long submitApplication(long applicantId, long approvalTypeId) {
         Application application = applicationService.createDraft(new ApplicationService.CreateDraftCommand(
                 applicantId,
@@ -168,7 +300,7 @@ class ApiAuthorizationTest {
                 .getResponse()
                 .getContentAsString();
 
-        String accessToken = response.replaceAll(".*\\\"accessToken\\\":\\\"([^\\\"]+)\\\".*", "$1");
+        String accessToken = objectMapper.readTree(response).path("accessToken").asText();
         assertThat(accessToken).isNotBlank();
         return accessToken;
     }
@@ -212,6 +344,12 @@ class ApiAuthorizationTest {
                 """,
                 String.class,
                 applicationId);
+    }
+
+    private int approvalLineStepCount() {
+        return jdbcTemplate.queryForObject(
+                "select count(*) from approval_line_steps",
+                Integer.class);
     }
 
     private byte[] pngBytes() {

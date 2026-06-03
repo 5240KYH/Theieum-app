@@ -2,6 +2,7 @@ package com.theieum.approval.admin;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -19,17 +20,24 @@ import org.springframework.web.server.ResponseStatusException;
 import com.theieum.approval.application.Application;
 import com.theieum.approval.application.ApplicationRepository;
 import com.theieum.approval.application.ApplicationService;
+import com.theieum.approval.approval.ApprovalStepType;
 import com.theieum.approval.auth.AuthenticatedUser;
 import com.theieum.approval.notification.NotificationEventRepository;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 
 @RestController
 @RequestMapping("/api/admin")
 public class AdminController {
+
+    private static final Set<String> ALLOWED_ROLES = Set.of("ADMIN", "APPROVER", "APPLICANT");
+    private static final Set<String> ALLOWED_ORGANIZATION_SCOPES = Set.of("APPLICANT_ORG");
+    private static final Set<String> ALLOWED_SORT_POLICIES = Set.of("POSITION_ORDER", "INPUT_ORDER");
 
     private final JdbcTemplate jdbcTemplate;
     private final PasswordEncoder passwordEncoder;
@@ -78,6 +86,7 @@ public class AdminController {
             @AuthenticationPrincipal AuthenticatedUser user,
             @Valid @RequestBody CreateUserRequest request) {
         requireAdmin(user);
+        validateUserRequest(request);
         Long id = jdbcTemplate.queryForObject(
                 """
                 insert into users (
@@ -123,6 +132,9 @@ public class AdminController {
             @AuthenticationPrincipal AuthenticatedUser user,
             @Valid @RequestBody CreateOrganizationRequest request) {
         requireAdmin(user);
+        if (request.parentId != null) {
+            requireExists("organizations", request.parentId, "Parent organization not found: " + request.parentId);
+        }
         Long id = jdbcTemplate.queryForObject(
                 """
                 insert into organizations (name, parent_id, level_no, sort_order, active)
@@ -193,6 +205,7 @@ public class AdminController {
             @AuthenticationPrincipal AuthenticatedUser user,
             @Valid @RequestBody CreateApprovalLineRequest request) {
         requireAdmin(user);
+        validateApprovalLineRequest(request);
         Long id = jdbcTemplate.queryForObject(
                 """
                 insert into approval_lines (approval_type_id, name, active)
@@ -239,13 +252,7 @@ public class AdminController {
             @PathVariable long stepId,
             @Valid @RequestBody AdminApprovalRequest request) {
         requireAdmin(user);
-        try {
-            return AdminApprovalResponse.from(applicationService.adminApprove(stepId, user.id(), request.reason));
-        } catch (IllegalArgumentException exception) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
-        } catch (IllegalStateException exception) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, exception.getMessage(), exception);
-        }
+        return AdminApprovalResponse.from(applicationService.adminApprove(stepId, user.id(), request.reason));
     }
 
     @GetMapping("/applications")
@@ -299,6 +306,96 @@ public class AdminController {
         return maxSortOrder + 10;
     }
 
+    private void validateUserRequest(CreateUserRequest request) {
+        requireExists("organizations", request.organizationId, "Organization not found: " + request.organizationId);
+        requireExists("positions", request.positionId, "Position not found: " + request.positionId);
+        validateRoles(request.roles == null || request.roles.isBlank() ? "APPLICANT" : request.roles);
+    }
+
+    private void validateRoles(String roles) {
+        for (String role : roles.split(",")) {
+            String normalized = role.trim();
+            if (normalized.isEmpty() || !ALLOWED_ROLES.contains(normalized)) {
+                throw new IllegalArgumentException("Unsupported role: " + role);
+            }
+        }
+    }
+
+    private void validateApprovalLineRequest(CreateApprovalLineRequest request) {
+        requireExists("approval_types", request.approvalTypeId, "Approval type not found: " + request.approvalTypeId);
+        if (request.steps == null || request.steps.isEmpty()) {
+            throw new IllegalArgumentException("Approval line must have at least one step");
+        }
+        for (CreateApprovalLineStepRequest step : request.steps) {
+            validateApprovalLineStep(step);
+        }
+    }
+
+    private void validateApprovalLineStep(CreateApprovalLineStepRequest step) {
+        ApprovalStepType stepType = parseStepType(step.stepType);
+        String sortPolicy = step.sortPolicy == null || step.sortPolicy.isBlank() ? "POSITION_ORDER" : step.sortPolicy;
+        if (!ALLOWED_SORT_POLICIES.contains(sortPolicy)) {
+            throw new IllegalArgumentException("Unsupported sort policy: " + step.sortPolicy);
+        }
+        if (step.organizationScope != null && !step.organizationScope.isBlank()
+                && !ALLOWED_ORGANIZATION_SCOPES.contains(step.organizationScope)) {
+            throw new IllegalArgumentException("Unsupported organization scope: " + step.organizationScope);
+        }
+        if (stepType == ApprovalStepType.DIRECT_USER) {
+            if (step.directUserId == null) {
+                throw new IllegalArgumentException("DIRECT_USER step requires directUserId");
+            }
+            requireActiveApprover(step.directUserId);
+            if (step.positionId != null) {
+                throw new IllegalArgumentException("DIRECT_USER step must not include positionId");
+            }
+        } else if (stepType == ApprovalStepType.ORG_POSITION) {
+            if (step.positionId == null) {
+                throw new IllegalArgumentException("ORG_POSITION step requires positionId");
+            }
+            requireExists("positions", step.positionId, "Position not found: " + step.positionId);
+            if (step.directUserId != null) {
+                throw new IllegalArgumentException("ORG_POSITION step must not include directUserId");
+            }
+        }
+    }
+
+    private ApprovalStepType parseStepType(String value) {
+        try {
+            return ApprovalStepType.valueOf(value);
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("Unsupported approval step type: " + value, exception);
+        }
+    }
+
+    private void requireActiveApprover(Long userId) {
+        Boolean exists = jdbcTemplate.queryForObject(
+                """
+                select exists (
+                    select 1
+                    from users
+                    where id = ?
+                      and active = true
+                      and roles like '%APPROVER%'
+                )
+                """,
+                Boolean.class,
+                userId);
+        if (!Boolean.TRUE.equals(exists)) {
+            throw new IllegalArgumentException("Active approver not found: " + userId);
+        }
+    }
+
+    private void requireExists(String tableName, Long id, String message) {
+        Boolean exists = jdbcTemplate.queryForObject(
+                "select exists (select 1 from " + tableName + " where id = ?)",
+                Boolean.class,
+                id);
+        if (!Boolean.TRUE.equals(exists)) {
+            throw new IllegalArgumentException(message);
+        }
+    }
+
     private Map<String, Object> one(String sql, Object id) {
         return jdbcTemplate.queryForMap(sql, id);
     }
@@ -312,9 +409,9 @@ public class AdminController {
     public record CreateUserRequest(
             @NotBlank String loginId,
             String externalSubject,
-            @NotBlank String password,
+            @NotBlank @Size(min = 8) String password,
             @NotBlank String name,
-            @NotBlank String email,
+            @NotBlank @Email String email,
             @NotNull Long organizationId,
             @NotNull Long positionId,
             String roles,

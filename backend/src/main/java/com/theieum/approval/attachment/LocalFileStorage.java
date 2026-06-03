@@ -9,6 +9,8 @@ import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import com.theieum.approval.common.FileStorageException;
+
 @Component
 public class LocalFileStorage implements FileStorage {
 
@@ -30,7 +32,7 @@ public class LocalFileStorage implements FileStorage {
             Files.createDirectories(storageDirectory);
             Files.write(storedPath, bytes);
         } catch (IOException ex) {
-            throw new IllegalStateException("Unable to store attachment", ex);
+            throw new FileStorageException("Unable to store attachment", ex);
         }
 
         return new StoredFile(storedFilename, storedPath.toString(), bytes.length, contentType);

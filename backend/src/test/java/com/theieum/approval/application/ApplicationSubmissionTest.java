@@ -16,7 +16,9 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import com.theieum.approval.common.ForbiddenOperationException;
 import com.theieum.approval.common.TestDatabaseHarness;
+import com.theieum.approval.common.WorkflowConflictException;
 
 @SpringBootTest(properties = {
         "spring.datasource.url=" + TestDatabaseHarness.JDBC_URL,
@@ -106,7 +108,7 @@ class ApplicationSubmissionTest {
                 "점심 식대"));
 
         assertThatThrownBy(() -> applicationService.submit(application.getId(), 3L))
-                .isInstanceOf(IllegalStateException.class)
+                .isInstanceOf(WorkflowConflictException.class)
                 .hasMessageContaining("Receipt image attachment is required");
     }
 
@@ -120,7 +122,7 @@ class ApplicationSubmissionTest {
                         "receipt.png",
                         "image/png",
                         pngBytes()))
-                .isInstanceOf(IllegalStateException.class)
+                .isInstanceOf(ForbiddenOperationException.class)
                 .hasMessageContaining("Only the applicant can attach receipts");
     }
 
@@ -174,7 +176,7 @@ class ApplicationSubmissionTest {
         applicationService.submit(application.getId(), 3L);
 
         assertThatThrownBy(() -> applicationService.submit(application.getId(), 3L))
-                .isInstanceOf(IllegalStateException.class)
+                .isInstanceOf(WorkflowConflictException.class)
                 .hasMessageContaining("Only draft applications can be submitted");
 
         Integer stepCount = jdbcTemplate.queryForObject(
