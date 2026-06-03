@@ -10,7 +10,6 @@ import {
   Network,
   PanelLeft,
   ShieldCheck,
-  UserRoundCog,
   UsersRound
 } from 'lucide-react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';

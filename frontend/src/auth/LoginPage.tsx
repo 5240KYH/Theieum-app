@@ -69,7 +69,7 @@ export function LoginPage() {
             />
           </label>
 
-          {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
+          {errorMessage ? <p className="form-error" role="alert">{errorMessage}</p> : null}
 
           <button className="primary-button" disabled={isSubmitting} type="submit">
             <LogIn aria-hidden="true" size={18} />

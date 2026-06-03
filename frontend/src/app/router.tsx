@@ -64,12 +64,14 @@ export function AppRoutes() {
           <Route path="/applications/my" element={<PlaceholderPage {...pages.myApplications} />} />
           <Route path="/applications/:id" element={<PlaceholderPage {...pages.applicationDetail} />} />
           <Route path="/approvals" element={<PlaceholderPage {...pages.approvals} />} />
-          <Route path="/admin/users" element={<PlaceholderPage {...pages.adminUsers} />} />
-          <Route path="/admin/organizations" element={<PlaceholderPage {...pages.adminOrganizations} />} />
-          <Route path="/admin/positions" element={<PlaceholderPage {...pages.adminPositions} />} />
-          <Route path="/admin/approval-lines" element={<PlaceholderPage {...pages.adminApprovalLines} />} />
-          <Route path="/admin/applications" element={<PlaceholderPage {...pages.adminApplications} />} />
-          <Route path="/admin/notifications" element={<PlaceholderPage {...pages.adminNotifications} />} />
+          <Route element={<ProtectedRoute requiredRole="ADMIN" />}>
+            <Route path="/admin/users" element={<PlaceholderPage {...pages.adminUsers} />} />
+            <Route path="/admin/organizations" element={<PlaceholderPage {...pages.adminOrganizations} />} />
+            <Route path="/admin/positions" element={<PlaceholderPage {...pages.adminPositions} />} />
+            <Route path="/admin/approval-lines" element={<PlaceholderPage {...pages.adminApprovalLines} />} />
+            <Route path="/admin/applications" element={<PlaceholderPage {...pages.adminApplications} />} />
+            <Route path="/admin/notifications" element={<PlaceholderPage {...pages.adminNotifications} />} />
+          </Route>
         </Route>
       </Route>
       <Route path="*" element={<Navigate replace to="/dashboard" />} />

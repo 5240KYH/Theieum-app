@@ -8,6 +8,13 @@ export class ApiError extends Error {
   }
 }
 
+function isJsonRequestBody(body: BodyInit | null | undefined) {
+  return body
+    && !(body instanceof FormData)
+    && !(body instanceof Blob)
+    && !(body instanceof URLSearchParams);
+}
+
 async function parseError(response: Response) {
   const text = await response.text();
 
@@ -23,11 +30,25 @@ async function parseError(response: Response) {
   }
 }
 
+async function parseSuccess<T>(response: Response) {
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  const contentType = response.headers.get('Content-Type') ?? '';
+  if (!contentType.includes('application/json')) {
+    return undefined as T;
+  }
+
+  const text = await response.text();
+  return text ? JSON.parse(text) as T : undefined as T;
+}
+
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('accessToken');
   const headers = new Headers(options.headers);
 
-  if (!headers.has('Content-Type') && options.body) {
+  if (!headers.has('Content-Type') && isJsonRequestBody(options.body)) {
     headers.set('Content-Type', 'application/json');
   }
 
@@ -41,12 +62,11 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   });
 
   if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      window.dispatchEvent(new Event('auth:unauthorized'));
+    }
     throw new ApiError(await parseError(response), response.status);
   }
 
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  return response.json() as Promise<T>;
+  return parseSuccess<T>(response);
 }
