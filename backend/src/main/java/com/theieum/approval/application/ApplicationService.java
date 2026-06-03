@@ -224,7 +224,14 @@ public class ApplicationService {
     }
 
     private ApplicationApprovalStep findApprovalStep(long stepId) {
-        return approvalStepRepository.findLockedById(stepId)
+        Long applicationId = approvalStepRepository.findApplicationIdByStepId(stepId);
+        if (applicationId == null) {
+            throw new IllegalStateException("Approval step not found: " + stepId);
+        }
+        return approvalStepRepository.findLockedByApplicationIdOrderByStepOrderAsc(applicationId)
+                .stream()
+                .filter(step -> step.getId().equals(stepId))
+                .findFirst()
                 .orElseThrow(() -> new IllegalStateException("Approval step not found: " + stepId));
     }
 

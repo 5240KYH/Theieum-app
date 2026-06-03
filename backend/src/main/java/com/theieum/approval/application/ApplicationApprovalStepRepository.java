@@ -1,8 +1,6 @@
 package com.theieum.approval.application;
 
 import java.util.List;
-import java.util.Optional;
-
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -14,9 +12,8 @@ public interface ApplicationApprovalStepRepository extends JpaRepository<Applica
 
     List<ApplicationApprovalStep> findByApplicationIdOrderByStepOrderAsc(Long applicationId);
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select step from ApplicationApprovalStep step where step.id = :id")
-    Optional<ApplicationApprovalStep> findLockedById(@Param("id") Long id);
+    @Query("select step.application.id from ApplicationApprovalStep step where step.id = :id")
+    Long findApplicationIdByStepId(@Param("id") Long id);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
