@@ -645,6 +645,18 @@ class ApiAuthorizationTest {
     }
 
     @Test
+    void applicantCanPreviewResolvedApprovalLineBeforeSubmit() throws Exception {
+        String applicantToken = login("employee01");
+
+        mockMvc.perform(get("/api/applications/approval-preview")
+                        .param("approvalTypeId", "1")
+                        .header("Authorization", bearer(applicantToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].stepOrder").value(1))
+                .andExpect(jsonPath("$[0].approver.name").isNotEmpty());
+    }
+
+    @Test
     void applicantCanCancelOwnDraftOnly() throws Exception {
         Application application = applicationService.createDraft(new ApplicationService.CreateDraftCommand(
                 3L,

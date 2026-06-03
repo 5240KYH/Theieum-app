@@ -4,8 +4,15 @@ import { useNavigate, useParams } from 'react-router-dom';
 
 import { useAuth } from '../auth/AuthContext';
 import { ApiError } from '../shared/api';
-import { attachReceiptImage, createApplication, getApplication, submitApplication, updateApplication } from './applicationApi';
-import { ApplicationResponse, canEditApplication } from './applicationTypes';
+import {
+  attachReceiptImage,
+  createApplication,
+  getApplication,
+  getApprovalPreview,
+  submitApplication,
+  updateApplication
+} from './applicationApi';
+import { ApplicationResponse, ApprovalPreviewStep, canEditApplication } from './applicationTypes';
 
 const MAX_RECEIPT_IMAGE_BYTES = 5 * 1024 * 1024;
 const SUPPORTED_RECEIPT_IMAGE_TYPES = new Set([
@@ -34,6 +41,10 @@ function errorMessage(error: unknown) {
   return '요청 처리 중 오류가 발생했습니다.';
 }
 
+function RequiredMark() {
+  return <span className="required-mark" aria-hidden="true">*</span>;
+}
+
 export function ApplicationForm() {
   const auth = useAuth();
   const navigate = useNavigate();
@@ -50,6 +61,8 @@ export function ApplicationForm() {
   const [draftPayloadSignature, setDraftPayloadSignature] = useState('');
   const [attachedDraftId, setAttachedDraftId] = useState<number | null>(null);
   const [existingAttachmentCount, setExistingAttachmentCount] = useState(0);
+  const [approvalPreview, setApprovalPreview] = useState<ApprovalPreviewStep[]>([]);
+  const [approvalPreviewError, setApprovalPreviewError] = useState('');
   const [isPreviewOpen, setPreviewOpen] = useState(false);
   const [isSaving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -113,6 +126,31 @@ export function ApplicationForm() {
       ignore = true;
     };
   }, [id]);
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadApprovalPreview() {
+      setApprovalPreviewError('');
+      try {
+        const steps = await getApprovalPreview(1);
+        if (!ignore) {
+          setApprovalPreview(steps);
+        }
+      } catch (requestError) {
+        if (!ignore) {
+          setApprovalPreview([]);
+          setApprovalPreviewError(errorMessage(requestError));
+        }
+      }
+    }
+
+    void loadApprovalPreview();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!receiptFile) {
@@ -282,10 +320,31 @@ export function ApplicationForm() {
       </div>
 
       <form className="form-panel application-form" onSubmit={handleSubmit}>
+        <section className="approval-preview-panel" aria-labelledby="approval-preview-title">
+          <div className="table-toolbar borderless-panel">
+            <h2 id="approval-preview-title">예상 결재선</h2>
+          </div>
+          {approvalPreview.length > 0 ? (
+            <ol className="approval-preview-list">
+              {approvalPreview.map((step) => (
+                <li key={`${step.stepOrder}-${step.approver.id}`}>
+                  <span className="status-pill compact">{step.stepOrder}단계</span>
+                  <strong>{step.approver.name}</strong>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="panel-message">
+              {approvalPreviewError ? '예상 결재선을 불러오지 못했습니다.' : '예상 결재선이 없습니다.'}
+            </p>
+          )}
+        </section>
+
         <div className="form-grid">
           <label>
-            신청일자
+            <span>신청일자 <RequiredMark /></span>
             <input
+              aria-label="신청일자"
               type="date"
               value={applicationDate}
               onChange={(event) => setApplicationDate(event.target.value)}
@@ -296,24 +355,27 @@ export function ApplicationForm() {
             <input value={auth.user?.name ?? ''} readOnly />
           </label>
           <label>
-            영수증 일자
+            <span>영수증 일자 <RequiredMark /></span>
             <input
+              aria-label="영수증 일자"
               type="date"
               value={receiptDate}
               onChange={(event) => setReceiptDate(event.target.value)}
             />
           </label>
           <label>
-            사용처
+            <span>사용처 <RequiredMark /></span>
             <input
+              aria-label="사용처"
               value={vendor}
               onChange={(event) => setVendor(event.target.value)}
               placeholder="예: 문구점"
             />
           </label>
           <label>
-            금액
+            <span>금액 <RequiredMark /></span>
             <input
+              aria-label="금액"
               min="1"
               type="number"
               value={amount}
@@ -324,8 +386,9 @@ export function ApplicationForm() {
         </div>
 
         <label className="wide-field">
-          신청 내용
+          <span>신청 내용 <RequiredMark /></span>
           <textarea
+            aria-label="신청 내용"
             rows={5}
             value={description}
             onChange={(event) => setDescription(event.target.value)}
@@ -334,8 +397,9 @@ export function ApplicationForm() {
         </label>
 
         <div className="attachment-field">
-          <label htmlFor="receipt-image">영수증 이미지 첨부</label>
+          <label className="required-inline-label" htmlFor="receipt-image">영수증 이미지 첨부 <RequiredMark /></label>
           <input
+            aria-label="영수증 이미지 첨부"
             key={fileInputKey}
             id="receipt-image"
             accept="image/png,image/jpeg,image/gif,image/webp"

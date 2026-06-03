@@ -83,6 +83,7 @@ export function DashboardPage() {
         <div>
           <p className="eyebrow">업무 현황</p>
           <h1 id="page-title">대시보드</h1>
+          {auth.user?.name ? <p className="muted-copy">{auth.user.name}님</p> : null}
         </div>
       </div>
 

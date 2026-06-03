@@ -48,6 +48,13 @@ export interface AdminPosition {
   active: boolean;
 }
 
+export interface AdminApprovalType {
+  id: number;
+  name: string;
+  description: string | null;
+  active: boolean;
+}
+
 export interface ApprovalLineStep {
   id: number;
   stepOrder: number;
@@ -61,6 +68,7 @@ export interface ApprovalLineStep {
 export interface AdminApprovalLine {
   id: number;
   approvalTypeId: number;
+  approvalTypeName?: string;
   name: string;
   active: boolean;
   steps: ApprovalLineStep[];

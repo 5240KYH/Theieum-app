@@ -32,10 +32,28 @@ function createStorage(): Storage {
 
 const positions = [
   { id: 1, name: '사원', rank_order: 10, sort_order: 10, active: true },
-  { id: 2, name: '대리', rank_order: 20, sort_order: 20, active: true }
+  { id: 2, name: '대리', rank_order: 20, sort_order: 20, active: true },
+  { id: 4, name: '팀장', rank_order: 40, sort_order: 40, active: true }
+];
+
+const organizations = [
+  { id: 1, name: '더이음', parent_id: null, level_no: 1, sort_order: 10, active: true },
+  { id: 3, name: '개발팀', parent_id: 1, level_no: 2, sort_order: 20, active: true }
 ];
 
 const users = [
+  {
+    id: 2,
+    login_id: 'approver01',
+    name: '결재자01',
+    email: 'approver01@theieum.local',
+    organization_id: 2,
+    organization_name: '경영지원팀',
+    position_id: 4,
+    position_name: '팀장',
+    roles: 'APPROVER',
+    active: true
+  },
   {
     id: 3,
     login_id: 'employee01',
@@ -47,13 +65,30 @@ const users = [
     position_name: '사원',
     roles: 'APPLICANT',
     active: true
+  },
+  {
+    id: 18,
+    login_id: 'lead-dev',
+    name: '개발팀장',
+    email: 'lead-dev@theieum.local',
+    organization_id: 3,
+    organization_name: '개발팀',
+    position_id: 4,
+    position_name: '팀장',
+    roles: 'APPROVER,APPLICANT',
+    active: true
   }
+];
+
+const approvalTypes = [
+  { id: 1, name: '영수증 첨부 신청', description: '영수증 신청', active: true }
 ];
 
 const approvalLines = [
   {
     id: 1,
     approvalTypeId: 1,
+    approvalTypeName: '영수증 첨부 신청',
     name: '영수증 첨부 신청 기본 결재선',
     active: true,
     steps: [
@@ -95,16 +130,20 @@ function mockReferenceFetch() {
         headers: { 'Content-Type': 'application/json' }
       });
     }
-    if (url === '/api/admin/organizations' && !init?.method) {
-      return new Response(JSON.stringify([
-        { id: 1, name: '더이음', parent_id: null, level_no: 1, sort_order: 10, active: true }
-      ]), {
+  if (url === '/api/admin/organizations' && !init?.method) {
+      return new Response(JSON.stringify(organizations), {
         status: 200,
         headers: { 'Content-Type': 'application/json' }
       });
     }
     if (url === '/api/admin/approval-lines' && !init?.method) {
       return new Response(JSON.stringify(approvalLines), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    if (url === '/api/admin/approval-types' && !init?.method) {
+      return new Response(JSON.stringify(approvalTypes), {
         status: 200,
         headers: { 'Content-Type': 'application/json' }
       });
@@ -255,13 +294,283 @@ describe('AdminReferencePage', () => {
 
     render(<App />);
 
-    await screen.findByRole('heading', { name: '사용자 관리' });
-    await userEvent.click(screen.getByRole('button', { name: '비밀번호 변경' }));
+    const row = await screen.findByRole('row', { name: /#3 employee01/ });
+    await userEvent.click(within(row).getByRole('button', { name: '비밀번호 변경' }));
     await userEvent.type(screen.getByLabelText('새 비밀번호'), 'changed-password');
     await userEvent.click(screen.getByRole('button', { name: '변경 저장' }));
 
     expect(await screen.findByRole('status')).toHaveTextContent('비밀번호가 변경되었습니다.');
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/users/3/password', expect.objectContaining({
+      method: 'PUT'
+    }));
+  });
+
+  it('관리자는 사용자 역할을 체크박스로 선택해 매니저 권한을 저장한다', async () => {
+    setAuth(['ADMIN', 'APPLICANT']);
+    window.history.pushState({}, '', '/admin/users');
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/admin/users' && !init?.method) {
+        return new Response(JSON.stringify(users), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      if (url === '/api/admin/users/3' && init?.method === 'PUT') {
+        const body = JSON.parse(String(init.body));
+        expect(body.roles).toBe('MANAGER,APPLICANT');
+        return new Response(JSON.stringify({
+          ...users[0],
+          roles: body.roles
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    const row = await screen.findByRole('row', { name: /#3 employee01/ });
+    await userEvent.click(within(row).getByRole('button', { name: '수정' }));
+
+    expect(screen.getByLabelText('아이디').parentElement).toHaveTextContent('*');
+    expect(screen.getByLabelText('이름').parentElement).toHaveTextContent('*');
+    expect(screen.getByRole('checkbox', { name: 'MANAGER' })).not.toBeChecked();
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'MANAGER' }));
+    await userEvent.click(screen.getByRole('button', { name: '저장' }));
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/users/3', expect.objectContaining({
+      method: 'PUT'
+    }));
+  });
+
+  it('관리자는 사용자 조직과 직위를 콤보로 선택해 저장한다', async () => {
+    setAuth(['ADMIN', 'APPLICANT']);
+    window.history.pushState({}, '', '/admin/users');
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/admin/users' && !init?.method) {
+        return new Response(JSON.stringify(users), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      if (url === '/api/admin/organizations' && !init?.method) {
+        return new Response(JSON.stringify(organizations), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      if (url === '/api/admin/positions' && !init?.method) {
+        return new Response(JSON.stringify(positions), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      if (url === '/api/admin/users/3' && init?.method === 'PUT') {
+        const body = JSON.parse(String(init.body));
+        expect(body.organizationId).toBe(1);
+        expect(body.positionId).toBe(4);
+        return new Response(JSON.stringify({
+          ...users[0],
+          organization_id: body.organizationId,
+          position_id: body.positionId
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    const row = await screen.findByRole('row', { name: /#3 employee01/ });
+    await userEvent.click(within(row).getByRole('button', { name: '수정' }));
+
+    expect(screen.getByRole('combobox', { name: '조직' })).toHaveDisplayValue('개발팀');
+    expect(screen.getByRole('combobox', { name: '직위' })).toHaveDisplayValue('사원');
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: '조직' }), '1');
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: '직위' }), '4');
+    await userEvent.click(screen.getByRole('button', { name: '저장' }));
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/users/3', expect.objectContaining({
+      method: 'PUT'
+    }));
+  });
+
+  it('예외 결재자는 조직과 대상자를 콤보로 선택해 저장한다', async () => {
+    setAuth(['MANAGER']);
+    window.history.pushState({}, '', '/admin/approval-org-exceptions');
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/admin/approval-org-exceptions' && !init?.method) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      if (url === '/api/admin/organizations' && !init?.method) {
+        return new Response(JSON.stringify(organizations), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      if (url === '/api/admin/users' && !init?.method) {
+        return new Response(JSON.stringify(users), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      if (url === '/api/admin/approval-org-exceptions' && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body));
+        expect(body.organizationId).toBe(3);
+        expect(body.approverUserId).toBe(3);
+        return new Response(JSON.stringify({
+          id: 9,
+          approvalTypeId: 1,
+          organizationId: body.organizationId,
+          organizationName: '개발팀',
+          approverUserId: body.approverUserId,
+          approverName: '직원01',
+          stepOrder: body.stepOrder,
+          active: true
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: '조직별 예외 결재자 관리' });
+    await userEvent.click(screen.getByRole('button', { name: '새 항목' }));
+
+    expect(screen.getByRole('combobox', { name: '조직' })).toHaveDisplayValue('더이음');
+    expect(screen.getByRole('combobox', { name: '예외 결재자' })).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: '조직' }), '3');
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: '예외 결재자' }), '3');
+    expect(screen.getByRole('combobox', { name: '예외 결재자' })).toHaveDisplayValue('직원01');
+    await userEvent.clear(screen.getByLabelText('단계'));
+    await userEvent.type(screen.getByLabelText('단계'), '2');
+    await userEvent.click(screen.getByRole('button', { name: '저장' }));
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/approval-org-exceptions', expect.objectContaining({
+      method: 'POST'
+    }));
+  });
+
+  it('결재선 단계는 행 단위 편집기로 수정해 저장한다', async () => {
+    setAuth(['MANAGER']);
+    window.history.pushState({}, '', '/admin/approval-lines');
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/admin/approval-lines' && !init?.method) {
+        return new Response(JSON.stringify(approvalLines), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      if (url === '/api/admin/approval-types' && !init?.method) {
+        return new Response(JSON.stringify(approvalTypes), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      if (url === '/api/admin/users' && !init?.method) {
+        return new Response(JSON.stringify(users), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      if (url === '/api/admin/positions' && !init?.method) {
+        return new Response(JSON.stringify(positions), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      if (url === '/api/admin/approval-lines/1' && init?.method === 'PUT') {
+        const body = JSON.parse(String(init.body));
+        expect(body.approvalTypeId).toBe(1);
+        expect(body.steps).toEqual([
+          {
+            stepOrder: 1,
+            stepType: 'DIRECT_USER',
+            organizationScope: null,
+            positionId: null,
+            directUserId: 18,
+            sortPolicy: 'POSITION_ORDER'
+          },
+          {
+            stepOrder: 2,
+            stepType: 'ORG_POSITION',
+            organizationScope: 'PARENT_ORG',
+            positionId: 4,
+            directUserId: null,
+            sortPolicy: 'POSITION_ORDER'
+          }
+        ]);
+        return new Response(JSON.stringify({
+          ...approvalLines[0],
+          steps: body.steps
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    const row = await screen.findByRole('row', { name: /영수증 첨부 신청 기본 결재선/ });
+    await userEvent.click(within(row).getByRole('button', { name: '수정' }));
+
+    expect(screen.queryByLabelText('단계')).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: '결재 유형' })).toHaveDisplayValue('영수증 첨부 신청');
+    expect(screen.getByText('결재선 설정 안내')).toBeInTheDocument();
+    expect(screen.getByText(/신청서 유형별로 활성 결재선은 하나만 사용합니다/)).toBeInTheDocument();
+    expect(screen.getByText('직접 사용자')).toBeInTheDocument();
+    expect(screen.getByText('조직/직위')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: '1단계 사용자' })).toHaveDisplayValue('#2 결재자01');
+    expect(screen.queryByLabelText('1단계 조직범위')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('1단계 직위')).not.toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: '1단계 사용자' }), '18');
+    await userEvent.click(screen.getByRole('button', { name: '단계 추가' }));
+    await userEvent.selectOptions(screen.getByLabelText('2단계 유형'), 'ORG_POSITION');
+    expect(screen.queryByLabelText('2단계 사용자')).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: '요청자 부서' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: '상위 조직' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: '최상위 조직' })).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText('2단계 조직범위'), 'PARENT_ORG');
+    await userEvent.selectOptions(screen.getByLabelText('2단계 직위'), '4');
+    await userEvent.click(screen.getByRole('button', { name: '저장' }));
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/approval-lines/1', expect.objectContaining({
       method: 'PUT'
     }));
   });

@@ -39,7 +39,7 @@ import jakarta.validation.constraints.Size;
 public class AdminController {
 
     private static final Set<String> ALLOWED_ROLES = Set.of("ADMIN", "MANAGER", "MANGER", "APPROVER", "APPLICANT");
-    private static final Set<String> ALLOWED_ORGANIZATION_SCOPES = Set.of("APPLICANT_ORG");
+    private static final Set<String> ALLOWED_ORGANIZATION_SCOPES = Set.of("APPLICANT_ORG", "PARENT_ORG", "ROOT_ORG");
     private static final Set<String> ALLOWED_SORT_POLICIES = Set.of("POSITION_ORDER", "INPUT_ORDER");
 
     private final JdbcTemplate jdbcTemplate;
@@ -325,18 +325,41 @@ public class AdminController {
         return ResponseEntity.noContent().build();
     }
 
+    @GetMapping("/approval-types")
+    @Transactional(readOnly = true)
+    public List<ApprovalTypeResponse> approvalTypes(@AuthenticationPrincipal AuthenticatedUser user) {
+        requireManager(user);
+        return jdbcTemplate.queryForList("""
+                select id, name, description, active
+                from approval_types
+                order by id asc
+                """).stream()
+                .map(row -> new ApprovalTypeResponse(
+                        ((Number) row.get("id")).longValue(),
+                        (String) row.get("name"),
+                        (String) row.get("description"),
+                        (Boolean) row.get("active")))
+                .toList();
+    }
+
     @GetMapping("/approval-lines")
     @Transactional(readOnly = true)
     public List<ApprovalLineResponse> approvalLines(@AuthenticationPrincipal AuthenticatedUser user) {
         requireManager(user);
         return jdbcTemplate.queryForList("""
-                select id, approval_type_id, name, active
-                from approval_lines
-                order by id asc
+                select line.id,
+                       line.approval_type_id,
+                       type.name as approval_type_name,
+                       line.name,
+                       line.active
+                from approval_lines line
+                join approval_types type on type.id = line.approval_type_id
+                order by line.id asc
                 """).stream()
                 .map(row -> new ApprovalLineResponse(
                         ((Number) row.get("id")).longValue(),
                         ((Number) row.get("approval_type_id")).longValue(),
+                        (String) row.get("approval_type_name"),
                         (String) row.get("name"),
                         (Boolean) row.get("active"),
                         approvalLineSteps(((Number) row.get("id")).longValue())))
@@ -826,6 +849,13 @@ public class AdminController {
             Boolean active) {
     }
 
+    public record ApprovalTypeResponse(
+            Long id,
+            String name,
+            String description,
+            boolean active) {
+    }
+
     public record AdminPasswordChangeRequest(@NotBlank @Size(min = 8) String newPassword) {
     }
 
@@ -835,6 +865,7 @@ public class AdminController {
     public record ApprovalLineResponse(
             Long id,
             Long approvalTypeId,
+            String approvalTypeName,
             String name,
             boolean active,
             List<ApprovalLineStepResponse> steps) {

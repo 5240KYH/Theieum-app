@@ -16,6 +16,7 @@ import {
   deleteAdminUser,
   getAdminApprovalLines,
   getAdminApprovalOrgExceptions,
+  getAdminApprovalTypes,
   getAdminOrganizations,
   getAdminPositions,
   getAdminUsers,
@@ -29,6 +30,7 @@ import {
 import {
   AdminApprovalLine,
   AdminApprovalOrgException,
+  AdminApprovalType,
   AdminOrganization,
   AdminPosition,
   AdminUser
@@ -62,6 +64,16 @@ interface PageConfig {
 }
 
 const STEP_TEMPLATE = '1,DIRECT_USER,,,2,POSITION_ORDER';
+const ROLE_OPTIONS = ['ADMIN', 'MANAGER', 'APPROVER', 'APPLICANT'];
+const STEP_TYPE_OPTIONS = [
+  { value: 'DIRECT_USER', label: '직접 사용자' },
+  { value: 'ORG_POSITION', label: '조직/직위' }
+];
+const ORGANIZATION_SCOPE_OPTIONS = [
+  { value: 'APPLICANT_ORG', label: '요청자 부서' },
+  { value: 'PARENT_ORG', label: '상위 조직' },
+  { value: 'ROOT_ORG', label: '최상위 조직' }
+];
 
 function errorMessage(error: unknown) {
   if (error instanceof ApiError || error instanceof Error) {
@@ -69,6 +81,10 @@ function errorMessage(error: unknown) {
   }
 
   return '관리 데이터를 처리하지 못했습니다.';
+}
+
+function RequiredMark() {
+  return <span className="required-mark" aria-hidden="true">*</span>;
 }
 
 function configs(): Record<AdminReferenceKind, PageConfig> {
@@ -86,8 +102,8 @@ function configs(): Record<AdminReferenceKind, PageConfig> {
         { key: 'password', label: '초기 비밀번호', type: 'password', createOnly: true },
         { key: 'name', label: '이름' },
         { key: 'email', label: '이메일' },
-        { key: 'organizationId', label: '조직 ID', type: 'number' },
-        { key: 'positionId', label: '직위 ID', type: 'number' },
+        { key: 'organizationId', label: '조직', type: 'number' },
+        { key: 'positionId', label: '직위', type: 'number' },
         { key: 'roles', label: '역할' },
         { key: 'active', label: '활성', type: 'checkbox' }
       ]
@@ -132,7 +148,7 @@ function configs(): Record<AdminReferenceKind, PageConfig> {
       remove: deleteAdminApprovalLine,
       headers: ['ID', '결재선명', '결재 유형', '단계', '상태', '관리'],
       fields: [
-        { key: 'approvalTypeId', label: '결재 유형 ID', type: 'number' },
+        { key: 'approvalTypeId', label: '결재 유형', type: 'number' },
         { key: 'name', label: '결재선명' },
         { key: 'stepsText', label: '단계', type: 'textarea' },
         { key: 'active', label: '활성', type: 'checkbox' }
@@ -147,9 +163,9 @@ function configs(): Record<AdminReferenceKind, PageConfig> {
       remove: deleteAdminApprovalOrgException,
       headers: ['ID', '결재 유형', '조직', '예외 결재자', '단계', '상태', '관리'],
       fields: [
-        { key: 'approvalTypeId', label: '결재 유형 ID', type: 'number' },
-        { key: 'organizationId', label: '조직 ID', type: 'number' },
-        { key: 'approverUserId', label: '예외 결재자 ID', type: 'number' },
+        { key: 'approvalTypeId', label: '결재 유형', type: 'number' },
+        { key: 'organizationId', label: '조직', type: 'number' },
+        { key: 'approverUserId', label: '예외 결재자', type: 'number' },
         { key: 'stepOrder', label: '단계', type: 'number' },
         { key: 'active', label: '활성', type: 'checkbox' }
       ]
@@ -247,6 +263,80 @@ function requiredNumber(value: DraftValue | undefined) {
   return Number(value);
 }
 
+function selectedRoles(value: DraftValue | undefined) {
+  return String(value ?? '')
+    .split(',')
+    .map((role) => role.trim().toUpperCase())
+    .filter(Boolean);
+}
+
+function updateRoleValue(value: DraftValue | undefined, role: string, checked: boolean) {
+  const current = new Set(selectedRoles(value));
+  if (checked) {
+    current.add(role);
+  } else {
+    current.delete(role);
+  }
+
+  return ROLE_OPTIONS.filter((option) => current.has(option)).join(',');
+}
+
+function normalizeOrganizationScope(value: string | undefined) {
+  if (!value || value === 'REQUESTER_DEPARTMENT') {
+    return 'APPLICANT_ORG';
+  }
+  if (value === 'ROOT') {
+    return 'ROOT_ORG';
+  }
+
+  return value;
+}
+
+interface EditableApprovalLineStep {
+  stepOrder: string;
+  stepType: string;
+  organizationScope: string;
+  positionId: string;
+  directUserId: string;
+  sortPolicy: string;
+}
+
+function parseApprovalLineSteps(value: DraftValue | undefined): EditableApprovalLineStep[] {
+  const lines = String(value ?? STEP_TEMPLATE).split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  return (lines.length > 0 ? lines : [STEP_TEMPLATE]).map((line, index) => {
+    const [stepOrder, stepType, organizationScope, positionId, directUserId, sortPolicy] = line.split(',');
+    return {
+      stepOrder: stepOrder || String(index + 1),
+      stepType: stepType || 'DIRECT_USER',
+      organizationScope: normalizeOrganizationScope(organizationScope),
+      positionId: positionId ?? '',
+      directUserId: directUserId ?? '',
+      sortPolicy: sortPolicy || 'POSITION_ORDER'
+    };
+  });
+}
+
+function serializeApprovalLineSteps(steps: EditableApprovalLineStep[]) {
+  return steps.map((step, index) => {
+    const stepType = step.stepType || 'DIRECT_USER';
+    return [
+      step.stepOrder || String(index + 1),
+      stepType,
+      stepType === 'ORG_POSITION' ? step.organizationScope || 'APPLICANT_ORG' : '',
+      stepType === 'ORG_POSITION' ? step.positionId : '',
+      stepType === 'DIRECT_USER' ? step.directUserId : '',
+      'POSITION_ORDER'
+    ].join(',');
+  }).join('\n');
+}
+
+function isRequiredField(field: FieldConfig) {
+  return field.type !== 'checkbox' && field.key !== 'parentId';
+}
+
 function buildPayload(kind: AdminReferenceKind, draft: Draft, isCreating: boolean) {
   if (kind === 'users') {
     return {
@@ -330,6 +420,34 @@ function sortOrganizations(items: ReferenceItem[]) {
   return sorted;
 }
 
+function activeOrganizations(organizations: AdminOrganization[]) {
+  return sortOrganizations(organizations).filter((organization) => organization.active);
+}
+
+function activePositions(positions: AdminPosition[]) {
+  return positions
+    .filter((position) => position.active)
+    .sort((a, b) => a.rank_order - b.rank_order || a.sort_order - b.sort_order || a.id - b.id);
+}
+
+function activeUsers(users: AdminUser[]) {
+  return users
+    .filter((user) => user.active)
+    .sort((a, b) => a.name.localeCompare(b.name, 'ko') || a.id - b.id);
+}
+
+function activeApprovalTypes(approvalTypes: AdminApprovalType[]) {
+  return approvalTypes.filter((approvalType) => approvalType.active).sort((a, b) => a.id - b.id);
+}
+
+function firstId(items: Array<{ id: number }>) {
+  return items[0] ? String(items[0].id) : '';
+}
+
+function userOptionLabel(user: AdminUser) {
+  return `#${user.id} ${user.name}`;
+}
+
 export function AdminReferencePage({ kind }: AdminReferencePageProps) {
   const auth = useAuth();
   const isAdmin = auth.hasRole('ADMIN');
@@ -341,6 +459,10 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [isCreating, setCreating] = useState(false);
   const [draft, setDraft] = useState<Draft>({});
+  const [approvalTypes, setApprovalTypes] = useState<AdminApprovalType[]>([]);
+  const [organizations, setOrganizations] = useState<AdminOrganization[]>([]);
+  const [positions, setPositions] = useState<AdminPosition[]>([]);
+  const [selectableUsers, setSelectableUsers] = useState<AdminUser[]>([]);
   const [passwordTarget, setPasswordTarget] = useState<AdminUser | null>(null);
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
@@ -371,6 +493,80 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
     }
   }
 
+  async function loadSelectOptions(
+    targetKind = kind,
+    shouldApply: () => boolean = () => true
+  ) {
+    if (targetKind !== 'users' && targetKind !== 'approvalLines' && targetKind !== 'approvalOrgExceptions') {
+      setApprovalTypes([]);
+      setOrganizations([]);
+      setPositions([]);
+      setSelectableUsers([]);
+      return;
+    }
+
+    try {
+      const [approvalTypeData, organizationData, positionData, userData] = await Promise.all([
+        targetKind === 'approvalLines' || targetKind === 'approvalOrgExceptions'
+          ? getAdminApprovalTypes()
+          : Promise.resolve([]),
+        targetKind === 'users' || targetKind === 'approvalOrgExceptions'
+          ? getAdminOrganizations()
+          : Promise.resolve([]),
+        targetKind === 'users' || targetKind === 'approvalLines'
+          ? getAdminPositions()
+          : Promise.resolve([]),
+        targetKind === 'approvalLines' || targetKind === 'approvalOrgExceptions'
+          ? getAdminUsers()
+          : Promise.resolve([])
+      ]);
+      if (!shouldApply()) {
+        return;
+      }
+
+      setApprovalTypes(activeApprovalTypes(approvalTypeData));
+      setOrganizations(activeOrganizations(organizationData));
+      setPositions(activePositions(positionData));
+      setSelectableUsers(activeUsers(userData));
+    } catch (requestError) {
+      if (shouldApply()) {
+        setError(errorMessage(requestError));
+      }
+    }
+  }
+
+  function applyDefaultSelectValues(current: Draft) {
+    if (kind === 'users') {
+      return {
+        ...current,
+        organizationId: current.organizationId || firstId(organizations),
+        positionId: current.positionId || firstId(positions)
+      };
+    }
+
+    if (kind === 'approvalLines') {
+      return {
+        ...current,
+        approvalTypeId: current.approvalTypeId || firstId(approvalTypes)
+      };
+    }
+
+    if (kind === 'approvalOrgExceptions') {
+      return {
+        ...current,
+        approvalTypeId: current.approvalTypeId || firstId(approvalTypes),
+        organizationId: current.organizationId || firstId(organizations),
+        approverUserId: current.approverUserId || firstId(selectableUsers)
+      };
+    }
+
+    return current;
+  }
+
+  function createDraft() {
+    return applyDefaultSelectValues(initialDraft(kind));
+  }
+
   useEffect(() => {
     let ignore = false;
     setItems([]);
@@ -381,11 +577,20 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
     setPassword('');
     setMessage('');
     void load(config, kind, () => !ignore);
+    void loadSelectOptions(kind, () => !ignore);
 
     return () => {
       ignore = true;
     };
   }, [config, kind]);
+
+  useEffect(() => {
+    if (!isCreating) {
+      return;
+    }
+
+    setDraft((current) => applyDefaultSelectValues(current));
+  }, [approvalTypes, isCreating, kind, organizations, positions, selectableUsers]);
 
   function updateDraftValue(key: string, value: DraftValue) {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -394,7 +599,7 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
   function startCreate() {
     setCreating(true);
     setEditingId(null);
-    setDraft(initialDraft(kind));
+    setDraft(createDraft());
     setMessage('');
     setError('');
   }
@@ -482,6 +687,21 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
         </div>
       </div>
 
+      {kind === 'approvalLines' ? (
+        <section className="admin-guide-panel" aria-labelledby="approval-line-guide-title">
+          <h2 id="approval-line-guide-title">결재선 설정 안내</h2>
+          <p>
+            신청서 유형별로 활성 결재선은 하나만 사용합니다. 결재 유형은 신청서 이름으로 선택하고,
+            단계는 위에서부터 순서대로 진행됩니다.
+          </p>
+          <p className="muted-copy">
+            직접 사용자는 특정 사용자를 바로 지정합니다. 조직/직위는 요청자 부서, 상위 조직,
+            최상위 조직 중 하나를 고른 뒤 직위를 선택해 해당 조직의 그 직위 사용자를 결재자로 산정합니다.
+            상위 조직이 없는 최상위 조직 사용자는 본인 조직을 기준으로 처리됩니다.
+          </p>
+        </section>
+      ) : null}
+
       {canMutate && isEditing ? (
         <form className="form-panel admin-edit-panel" onSubmit={handleSave}>
           <div className="table-toolbar borderless-panel">
@@ -502,34 +722,139 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
           <div className="form-grid">
             {config.fields
               .filter((field) => isCreating || !field.createOnly)
-              .map((field) => (
-                <label key={field.key}>
-                  {field.label}
-                  {field.type === 'checkbox' ? (
+              .map((field) => {
+                const label = <span>{field.label} {isRequiredField(field) ? <RequiredMark /> : null}</span>;
+                if ((kind === 'approvalLines' || kind === 'approvalOrgExceptions') && field.key === 'approvalTypeId') {
+                  return (
+                    <SelectField
+                      key={field.key}
+                      label={field.label}
+                      required={isRequiredField(field)}
+                      value={String(draft.approvalTypeId ?? '')}
+                      options={approvalTypes.map((approvalType) => ({
+                        value: String(approvalType.id),
+                        label: approvalType.name
+                      }))}
+                      onChange={(value) => updateDraftValue('approvalTypeId', value)}
+                    />
+                  );
+                }
+                if (kind === 'users' && field.key === 'roles') {
+                  return (
+                    <div className="admin-field" key={field.key}>
+                      {label}
+                      <RoleCheckboxGroup
+                        value={String(draft.roles ?? '')}
+                        onChange={(role, checked) => updateDraftValue('roles', updateRoleValue(draft.roles, role, checked))}
+                      />
+                    </div>
+                  );
+                }
+                if (kind === 'users' && field.key === 'organizationId') {
+                  return (
+                    <SelectField
+                      key={field.key}
+                      label={field.label}
+                      required={isRequiredField(field)}
+                      value={String(draft.organizationId ?? '')}
+                      options={organizations.map((organization) => ({
+                        value: String(organization.id),
+                        label: organization.name
+                      }))}
+                      onChange={(value) => updateDraftValue('organizationId', value)}
+                    />
+                  );
+                }
+                if (kind === 'users' && field.key === 'positionId') {
+                  return (
+                    <SelectField
+                      key={field.key}
+                      label={field.label}
+                      required={isRequiredField(field)}
+                      value={String(draft.positionId ?? '')}
+                      options={positions.map((position) => ({
+                        value: String(position.id),
+                        label: position.name
+                      }))}
+                      onChange={(value) => updateDraftValue('positionId', value)}
+                    />
+                  );
+                }
+                if (kind === 'approvalOrgExceptions' && field.key === 'organizationId') {
+                  return (
+                    <SelectField
+                      key={field.key}
+                      label={field.label}
+                      required={isRequiredField(field)}
+                      value={String(draft.organizationId ?? '')}
+                      options={organizations.map((organization) => ({
+                        value: String(organization.id),
+                        label: organization.name
+                      }))}
+                      onChange={(value) => updateDraftValue('organizationId', value)}
+                    />
+                  );
+                }
+                if (kind === 'approvalOrgExceptions' && field.key === 'approverUserId') {
+                  return (
+                    <SelectField
+                      key={field.key}
+                      label={field.label}
+                      required={isRequiredField(field)}
+                      value={String(draft.approverUserId ?? '')}
+                      options={selectableUsers.map((user) => ({
+                        value: String(user.id),
+                        label: user.name
+                      }))}
+                      onChange={(value) => updateDraftValue('approverUserId', value)}
+                    />
+                  );
+                }
+                if (kind === 'approvalLines' && field.key === 'stepsText') {
+                  return (
+                    <div className="admin-field wide-admin-field" key={field.key}>
+                      {label}
+                      <ApprovalLineStepsEditor
+                        positions={positions}
+                        users={selectableUsers}
+                        value={String(draft.stepsText ?? STEP_TEMPLATE)}
+                        onChange={(value) => updateDraftValue('stepsText', value)}
+                      />
+                    </div>
+                  );
+                }
+
+                return (
+                  <label key={field.key}>
+                    {label}
+                    {field.type === 'checkbox' ? (
                     <input
+                      aria-label={field.label}
                       type="checkbox"
                       checked={Boolean(draft[field.key])}
                       onChange={(event) => updateDraftValue(field.key, event.target.checked)}
                     />
                   ) : field.type === 'textarea' ? (
                     <textarea
+                      aria-label={field.label}
                       rows={4}
                       value={String(draft[field.key] ?? '')}
                       onChange={(event) => updateDraftValue(field.key, event.target.value)}
                     />
                   ) : (
                     <input
+                      aria-label={field.label}
                       type={field.type ?? 'text'}
                       value={String(draft[field.key] ?? '')}
                       onChange={(event) => updateDraftValue(field.key, event.target.value)}
                     />
                   )}
-                </label>
-              ))}
+                  </label>
+                );
+              })}
           </div>
-          <p className="muted-copy">결재선 단계는 순서,유형,조직범위,직위ID,사용자ID,정렬정책 형식으로 한 줄씩 입력합니다.</p>
           <div className="form-actions">
-            <button className="secondary-button" type="button" onClick={() => setDraft(initialDraft(kind))}>초기화</button>
+            <button className="secondary-button" type="button" onClick={() => setDraft(createDraft())}>초기화</button>
             <button className="primary-button" type="submit">
               <Save aria-hidden="true" size={16} />
               저장
@@ -615,6 +940,224 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
   );
 }
 
+function RoleCheckboxGroup({
+  value,
+  onChange
+}: {
+  value: string;
+  onChange: (role: string, checked: boolean) => void;
+}) {
+  const roles = selectedRoles(value);
+
+  return (
+    <div className="checkbox-grid">
+      {ROLE_OPTIONS.map((role) => (
+        <label className="checkbox-option" key={role}>
+          <input
+            type="checkbox"
+            checked={roles.includes(role)}
+            onChange={(event) => onChange(role, event.target.checked)}
+          />
+          <span>{role}</span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function SelectField({
+  label,
+  onChange,
+  options,
+  required,
+  value
+}: {
+  label: string;
+  onChange: (value: string) => void;
+  options: Array<{ value: string; label: string }>;
+  required: boolean;
+  value: string;
+}) {
+  const selectedValue = value || options[0]?.value || '';
+
+  return (
+    <label>
+      <span>{label} {required ? <RequiredMark /> : null}</span>
+      <select
+        aria-label={label}
+        value={selectedValue}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {options.length === 0 ? <option value="">선택</option> : null}
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function ApprovalLineStepsEditor({
+  positions,
+  users,
+  value,
+  onChange
+}: {
+  positions: AdminPosition[];
+  users: AdminUser[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const steps = parseApprovalLineSteps(value);
+  const firstPositionId = firstId(positions);
+  const firstUserId = firstId(users);
+
+  function updateStep(index: number, key: keyof EditableApprovalLineStep, nextValue: string) {
+    const next = steps.map((step, stepIndex) => (
+      stepIndex === index ? { ...step, [key]: nextValue } : step
+    ));
+    onChange(serializeApprovalLineSteps(next));
+  }
+
+  function updateStepType(index: number, stepType: string) {
+    const next = steps.map((step, stepIndex) => {
+      if (stepIndex !== index) {
+        return step;
+      }
+
+      if (stepType === 'ORG_POSITION') {
+        return {
+          ...step,
+          stepType,
+          organizationScope: step.organizationScope || 'APPLICANT_ORG',
+          positionId: step.positionId || firstPositionId,
+          directUserId: '',
+          sortPolicy: 'POSITION_ORDER'
+        };
+      }
+
+      return {
+        ...step,
+        stepType,
+        organizationScope: '',
+        positionId: '',
+        directUserId: step.directUserId || firstUserId,
+        sortPolicy: 'POSITION_ORDER'
+      };
+    });
+    onChange(serializeApprovalLineSteps(next));
+  }
+
+  function addStep() {
+    onChange(serializeApprovalLineSteps([
+      ...steps,
+      {
+        stepOrder: String(steps.length + 1),
+        stepType: 'DIRECT_USER',
+        organizationScope: '',
+        positionId: '',
+        directUserId: firstUserId,
+        sortPolicy: 'POSITION_ORDER'
+      }
+    ]));
+  }
+
+  function removeStep(index: number) {
+    const next = steps
+      .filter((_, stepIndex) => stepIndex !== index)
+      .map((step, stepIndex) => ({ ...step, stepOrder: String(stepIndex + 1) }));
+    onChange(serializeApprovalLineSteps(next.length > 0 ? next : parseApprovalLineSteps(STEP_TEMPLATE)));
+  }
+
+  return (
+    <div className="approval-line-editor">
+      {steps.map((step, index) => {
+        const labelPrefix = `${index + 1}단계`;
+        return (
+          <div className="approval-line-step-row" key={index}>
+            <label>
+              <span>{labelPrefix} 순서 <RequiredMark /></span>
+              <input
+                aria-label={`${labelPrefix} 순서`}
+                type="number"
+                value={step.stepOrder}
+                onChange={(event) => updateStep(index, 'stepOrder', event.target.value)}
+              />
+            </label>
+            <label>
+              <span>{labelPrefix} 유형 <RequiredMark /></span>
+              <select
+                aria-label={`${labelPrefix} 유형`}
+                value={step.stepType}
+                onChange={(event) => updateStepType(index, event.target.value)}
+              >
+                {STEP_TYPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            {step.stepType === 'ORG_POSITION' ? (
+              <>
+                <label>
+                  <span>{labelPrefix} 조직범위 <RequiredMark /></span>
+                  <select
+                    aria-label={`${labelPrefix} 조직범위`}
+                    value={step.organizationScope || 'APPLICANT_ORG'}
+                    onChange={(event) => updateStep(index, 'organizationScope', event.target.value)}
+                  >
+                    {ORGANIZATION_SCOPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>{labelPrefix} 직위 <RequiredMark /></span>
+                  <select
+                    aria-label={`${labelPrefix} 직위`}
+                    value={step.positionId || firstPositionId}
+                    onChange={(event) => updateStep(index, 'positionId', event.target.value)}
+                  >
+                    {positions.length === 0 ? <option value="">선택</option> : null}
+                    {positions.map((position) => (
+                      <option key={position.id} value={position.id}>{position.name}</option>
+                    ))}
+                  </select>
+                </label>
+              </>
+            ) : (
+              <label>
+                <span>{labelPrefix} 사용자 <RequiredMark /></span>
+                <select
+                  aria-label={`${labelPrefix} 사용자`}
+                  value={step.directUserId || firstUserId}
+                  onChange={(event) => updateStep(index, 'directUserId', event.target.value)}
+                >
+                  {users.length === 0 ? <option value="">선택</option> : null}
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>{userOptionLabel(user)}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <button
+              className="secondary-button danger-button"
+              type="button"
+              onClick={() => removeStep(index)}
+            >
+              <Trash2 aria-hidden="true" size={16} />
+              {labelPrefix} 삭제
+            </button>
+          </div>
+        );
+      })}
+      <button className="secondary-button" type="button" onClick={addStep}>
+        <Plus aria-hidden="true" size={16} />
+        단계 추가
+      </button>
+    </div>
+  );
+}
+
 function statusText(active: boolean) {
   return active ? '활성' : '비활성';
 }
@@ -674,7 +1217,7 @@ function renderCells(kind: AdminReferenceKind, item: ReferenceItem): ReactNode {
       <>
         <td>#{line.id}</td>
         <td>{line.name}</td>
-        <td>#{line.approvalTypeId}</td>
+        <td>{line.approvalTypeName ?? `#${line.approvalTypeId}`}</td>
         <td className="wrap-cell">
           {(line.steps ?? []).map((step) => `${step.stepOrder}. ${step.stepType}`).join(' / ')}
         </td>

@@ -76,6 +76,7 @@ describe('DashboardPage', () => {
       expect(screen.getByRole('heading', { name: '대시보드' })).toBeInTheDocument();
     });
 
+    expect(screen.getByText('직원01님')).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalledWith(
       '/api/approvals/inbox',
       expect.anything()

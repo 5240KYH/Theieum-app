@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
@@ -68,6 +69,18 @@ public class ApplicationController {
         return applicationRepository.findByApplicantIdOrderByCreatedAtDesc(user.id())
                 .stream()
                 .map(this::toResponse)
+                .toList();
+    }
+
+    @GetMapping("/approval-preview")
+    @Transactional(readOnly = true)
+    public List<ApprovalPreviewStepResponse> approvalPreview(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @RequestParam(defaultValue = "1") long approvalTypeId) {
+        requireRole(user, "APPLICANT");
+        return applicationService.previewApprovalLine(approvalTypeId, user.id())
+                .stream()
+                .map(ApprovalPreviewStepResponse::from)
                 .toList();
     }
 
@@ -282,6 +295,17 @@ public class ApplicationController {
                     UserSummary.from(step.getOriginalApprover()),
                     step.getStatus(),
                     step.getActedAt());
+        }
+    }
+
+    public record ApprovalPreviewStepResponse(
+            int stepOrder,
+            UserSummary approver) {
+
+        static ApprovalPreviewStepResponse from(ApplicationService.ApprovalPreviewStep step) {
+            return new ApprovalPreviewStepResponse(
+                    step.stepOrder(),
+                    new UserSummary(step.approverId(), step.approverName()));
         }
     }
 

@@ -89,10 +89,65 @@ describe('ApplicationForm', () => {
     render(<App />);
     vi.mocked(fetch).mockClear();
 
+    expect(screen.getByLabelText('신청일자').parentElement).toHaveTextContent('*');
+    expect(screen.getByLabelText('영수증 일자').parentElement).toHaveTextContent('*');
+    expect(screen.getByLabelText('사용처').parentElement).toHaveTextContent('*');
+    expect(screen.getByLabelText('금액').parentElement).toHaveTextContent('*');
+    expect(screen.getByLabelText('신청 내용').parentElement).toHaveTextContent('*');
+    expect(screen.getByLabelText('영수증 이미지 첨부').parentElement).toHaveTextContent('*');
+
     await userEvent.click(screen.getByRole('button', { name: '제출' }));
 
     expect(screen.getByText('필수 항목을 입력하면 제출할 수 있습니다.')).toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('신청 전에 예상 결재선을 표시한다', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url === '/api/applications/approval-preview?approvalTypeId=1') {
+        return new Response(JSON.stringify([
+          { stepOrder: 1, approver: { id: 18, name: '개발팀장' } },
+          { stepOrder: 2, approver: { id: 20, name: '대표' } }
+        ]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '예상 결재선' })).toBeInTheDocument();
+    expect(screen.getByText('1단계')).toBeInTheDocument();
+    expect(screen.getByText('개발팀장')).toBeInTheDocument();
+    expect(screen.getByText('2단계')).toBeInTheDocument();
+    expect(screen.getByText('대표')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '예상 결재선' }).compareDocumentPosition(screen.getByLabelText('신청일자'))
+        & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  it('영수증 이미지 첨부 필수 표시는 라벨 안에서 한 줄로 유지한다', () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify([]), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    })));
+
+    render(<App />);
+
+    const attachmentLabel = screen.getByText('영수증 이미지 첨부').closest('label');
+
+    expect(attachmentLabel).toHaveClass('required-inline-label');
+    expect(attachmentLabel).toHaveTextContent('영수증 이미지 첨부 *');
   });
 
   it('이미지 첨부 후 썸네일과 삭제 버튼을 표시한다', async () => {

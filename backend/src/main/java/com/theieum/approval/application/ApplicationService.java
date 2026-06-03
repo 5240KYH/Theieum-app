@@ -5,7 +5,10 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -111,6 +114,26 @@ public class ApplicationService {
         }
         application.cancelDraft(Instant.now());
         return application;
+    }
+
+    @Transactional(readOnly = true)
+    public List<ApprovalPreviewStep> previewApprovalLine(long approvalTypeId, long applicantId) {
+        findActiveUser(applicantId);
+        List<ResolvedApprover> approvers = approvalLineResolver.resolve(approvalTypeId, applicantId);
+        Map<Long, User> usersById = userRepository.findAllById(
+                        approvers.stream().map(ResolvedApprover::userId).toList())
+                .stream()
+                .collect(Collectors.toMap(User::getId, Function.identity()));
+
+        return approvers.stream()
+                .map(approver -> {
+                    User user = usersById.get(approver.userId());
+                    if (user == null || !user.isActive()) {
+                        throw new ResourceNotFoundException("Active approver not found: " + approver.userId());
+                    }
+                    return new ApprovalPreviewStep(approver.stepOrder(), user.getId(), user.getName());
+                })
+                .toList();
     }
 
     public Attachment attachReceiptImage(
@@ -381,5 +404,8 @@ public class ApplicationService {
             String vendor,
             BigDecimal amount,
             String description) {
+    }
+
+    public record ApprovalPreviewStep(int stepOrder, Long approverId, String approverName) {
     }
 }

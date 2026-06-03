@@ -126,6 +126,7 @@ public class ApprovalLineResolver {
         if (step.getPosition() == null) {
             throw new IllegalStateException("ORG_POSITION step has no position condition: " + step.getId());
         }
+        Long targetOrganizationId = resolveOrganizationScope(step.getOrganizationScope(), organizationId);
 
         List<?> userIds = entityManager.createNativeQuery(
                         """
@@ -138,7 +139,7 @@ public class ApprovalLineResolver {
                         order by positions.rank_order asc, users.id asc
                         """)
                 .setParameter(1, step.getPosition().getId())
-                .setParameter(2, organizationId)
+                .setParameter(2, targetOrganizationId)
                 .getResultList();
         if (userIds.isEmpty()) {
             throw new IllegalStateException("ORG_POSITION step has no active approvers: " + step.getId());
@@ -147,6 +148,68 @@ public class ApprovalLineResolver {
         return userIds.stream()
                 .map(userId -> new ResolvedApprover(toLong(userId), step.getStepOrder(), step.getStepType()))
                 .toList();
+    }
+
+    private Long resolveOrganizationScope(String organizationScope, long applicantOrganizationId) {
+        String scope = organizationScope == null || organizationScope.isBlank() ? "APPLICANT_ORG" : organizationScope;
+        if ("APPLICANT_ORG".equals(scope)) {
+            return applicantOrganizationId;
+        }
+        if ("PARENT_ORG".equals(scope)) {
+            return findParentOrganizationIdOrSelf(applicantOrganizationId);
+        }
+        if ("ROOT_ORG".equals(scope)) {
+            return findRootOrganizationId(applicantOrganizationId);
+        }
+
+        throw new IllegalStateException("Unsupported organization scope: " + organizationScope);
+    }
+
+    private Long findParentOrganizationIdOrSelf(long organizationId) {
+        List<?> organizationIds = entityManager.createNativeQuery(
+                        """
+                        select coalesce(parent_id, id)
+                        from organizations
+                        where id = ?
+                          and active = true
+                        """)
+                .setParameter(1, organizationId)
+                .getResultList();
+
+        if (organizationIds.isEmpty()) {
+            throw new IllegalStateException("Active organization not found: " + organizationId);
+        }
+
+        return toLong(organizationIds.getFirst());
+    }
+
+    private Long findRootOrganizationId(long organizationId) {
+        List<?> organizationIds = entityManager.createNativeQuery(
+                        """
+                        with recursive ancestors as (
+                            select id, parent_id, level_no
+                            from organizations
+                            where id = ?
+                              and active = true
+                            union all
+                            select parent.id, parent.parent_id, parent.level_no
+                            from organizations parent
+                            join ancestors child on child.parent_id = parent.id
+                            where parent.active = true
+                        )
+                        select id
+                        from ancestors
+                        order by level_no asc, id asc
+                        limit 1
+                        """)
+                .setParameter(1, organizationId)
+                .getResultList();
+
+        if (organizationIds.isEmpty()) {
+            throw new IllegalStateException("Active root organization not found: " + organizationId);
+        }
+
+        return toLong(organizationIds.getFirst());
     }
 
     private Long toLong(Object value) {

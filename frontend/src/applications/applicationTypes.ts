@@ -14,6 +14,11 @@ export interface ApprovalStepResponse {
   actedAt: string | null;
 }
 
+export interface ApprovalPreviewStep {
+  stepOrder: number;
+  approver: UserSummary;
+}
+
 export interface ApprovalHistoryResponse {
   id: number;
   stepOrder: number | null;

@@ -4,6 +4,7 @@ import {
   AdminApplication,
   AdminApprovalLine,
   AdminApprovalOrgException,
+  AdminApprovalType,
   AdminNotificationEvent,
   AdminOrganization,
   AdminOverrideResult,
@@ -97,6 +98,10 @@ export function updateAdminPosition(id: number, payload: unknown) {
 
 export function deleteAdminPosition(id: number) {
   return api<void>(`/admin/positions/${id}`, { method: 'DELETE' });
+}
+
+export function getAdminApprovalTypes() {
+  return api<AdminApprovalType[]>('/admin/approval-types');
 }
 
 export function getAdminApprovalLines() {

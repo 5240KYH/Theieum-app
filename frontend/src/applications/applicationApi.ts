@@ -1,5 +1,5 @@
 import { api, apiBlob } from '../shared/api';
-import { ApplicationResponse, AttachmentResponse, CreateApplicationPayload } from './applicationTypes';
+import { ApplicationResponse, ApprovalPreviewStep, AttachmentResponse, CreateApplicationPayload } from './applicationTypes';
 
 export function createApplication(payload: CreateApplicationPayload) {
   return api<ApplicationResponse>('/applications', {
@@ -39,6 +39,10 @@ export function cancelApplication(applicationId: number) {
 
 export function getMyApplications() {
   return api<ApplicationResponse[]>('/applications/my');
+}
+
+export function getApprovalPreview(approvalTypeId = 1) {
+  return api<ApprovalPreviewStep[]>(`/applications/approval-preview?approvalTypeId=${approvalTypeId}`);
 }
 
 export function getApplication(applicationId: string | number) {

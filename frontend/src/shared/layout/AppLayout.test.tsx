@@ -146,4 +146,35 @@ describe('AppLayout', () => {
       method: 'POST'
     }));
   });
+
+  it('로그아웃 전에 확인하고 취소하면 세션을 유지한다', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify([]), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    })));
+    const confirmMock = vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('button', { name: '로그아웃' }));
+
+    expect(confirmMock).toHaveBeenCalledWith('로그아웃 하시겠습니까?');
+    expect(localStorage.getItem('accessToken')).toBe('token');
+    expect(screen.getByRole('heading', { name: '대시보드' })).toBeInTheDocument();
+  });
+
+  it('로그아웃 확인 후 로그인 화면으로 이동한다', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify([]), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    })));
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('button', { name: '로그아웃' }));
+
+    expect(localStorage.getItem('accessToken')).toBeNull();
+    expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument();
+  });
 });

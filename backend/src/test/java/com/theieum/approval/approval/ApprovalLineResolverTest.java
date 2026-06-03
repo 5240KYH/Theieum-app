@@ -92,6 +92,38 @@ class ApprovalLineResolverTest {
     }
 
     @Test
+    void parentOrganizationScopeUsesImmediateParentOrganization() {
+        long approvalTypeId = 106L;
+        insertOrganization(30L, "개발1파트", 3L, 3, 10);
+        insertUser(30L, "part-member", "파트원", 30L, 1L);
+        insertApprovalType(approvalTypeId, "상위 조직 결재선 테스트");
+        insertApprovalLine(107L, approvalTypeId, "상위 조직 팀장 결재선");
+        insertOrgPositionStep(110L, 107L, 1, "PARENT_ORG", 4L);
+
+        List<ResolvedApprover> approvers = resolver.resolve(approvalTypeId, 30L);
+
+        assertThat(approvers)
+                .extracting(ResolvedApprover::userId)
+                .containsExactly(18L);
+    }
+
+    @Test
+    void rootOrganizationScopeUsesTopLevelOrganizationFromAnyDepth() {
+        long approvalTypeId = 107L;
+        insertOrganization(31L, "개발2파트", 3L, 3, 20);
+        insertUser(31L, "part-member-root", "파트원2", 31L, 1L);
+        insertApprovalType(approvalTypeId, "최상위 조직 결재선 테스트");
+        insertApprovalLine(108L, approvalTypeId, "최상위 조직 대표 결재선");
+        insertOrgPositionStep(111L, 108L, 1, "ROOT_ORG", 5L);
+
+        List<ResolvedApprover> approvers = resolver.resolve(approvalTypeId, 31L);
+
+        assertThat(approvers)
+                .extracting(ResolvedApprover::userId)
+                .containsExactly(1L, 20L);
+    }
+
+    @Test
     void orgPositionStepWithoutMatchingApproverFailsLineResolution() {
         long approvalTypeId = 103L;
         insertApprovalType(approvalTypeId, "빈 조직 직위 단계 테스트");
@@ -184,6 +216,15 @@ class ApprovalLineResolverTest {
     }
 
     private void insertOrgPositionStep(long id, long approvalLineId, int stepOrder, long positionId) {
+        insertOrgPositionStep(id, approvalLineId, stepOrder, "APPLICANT_ORG", positionId);
+    }
+
+    private void insertOrgPositionStep(
+            long id,
+            long approvalLineId,
+            int stepOrder,
+            String organizationScope,
+            long positionId) {
         jdbcTemplate.update(
                 """
                 insert into approval_line_steps (
@@ -194,11 +235,50 @@ class ApprovalLineResolverTest {
                     organization_scope,
                     position_id,
                     sort_policy
-                ) values (?, ?, ?, 'ORG_POSITION', 'APPLICANT_ORG', ?, 'POSITION_ORDER')
+                ) values (?, ?, ?, 'ORG_POSITION', ?, ?, 'POSITION_ORDER')
                 """,
                 id,
                 approvalLineId,
                 stepOrder,
+                organizationScope,
+                positionId);
+    }
+
+    private void insertOrganization(long id, String name, Long parentId, int levelNo, int sortOrder) {
+        jdbcTemplate.update(
+                """
+                insert into organizations (id, name, parent_id, level_no, sort_order, active)
+                values (?, ?, ?, ?, ?, true)
+                """,
+                id,
+                name,
+                parentId,
+                levelNo,
+                sortOrder);
+    }
+
+    private void insertUser(long id, String loginId, String name, long organizationId, long positionId) {
+        jdbcTemplate.update(
+                """
+                insert into users (
+                    id,
+                    login_id,
+                    external_subject,
+                    password_hash,
+                    name,
+                    email,
+                    organization_id,
+                    position_id,
+                    roles,
+                    active
+                ) values (?, ?, null, ?, ?, ?, ?, ?, 'APPLICANT', true)
+                """,
+                id,
+                loginId,
+                "$2a$10$8X8CxGxCQq6asM.KWSKYh.rhJaTdPC23Jh8pa7EnojSDCFDIB5xNW",
+                name,
+                loginId + "@theieum.local",
+                organizationId,
                 positionId);
     }
 
