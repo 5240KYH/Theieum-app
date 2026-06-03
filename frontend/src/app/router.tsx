@@ -35,6 +35,7 @@ export function AppRoutes() {
             <Route path="/admin/organizations" element={<AdminReferencePage kind="organizations" />} />
             <Route path="/admin/positions" element={<AdminReferencePage kind="positions" />} />
             <Route path="/admin/approval-lines" element={<AdminReferencePage kind="approvalLines" />} />
+            <Route path="/admin/approval-org-exceptions" element={<AdminReferencePage kind="approvalOrgExceptions" />} />
             <Route path="/admin/applications" element={<AdminApplicationsPage />} />
             <Route path="/admin/notifications" element={<AdminNotificationsPage />} />
           </Route>

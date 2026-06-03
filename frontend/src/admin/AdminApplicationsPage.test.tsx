@@ -206,4 +206,38 @@ describe('AdminApplicationsPage', () => {
     expect(await screen.findByText('인앱')).toBeInTheDocument();
     expect(screen.getByText('발송완료')).toBeInTheDocument();
   });
+
+  it('조직별 예외 결재자 목록을 표시한다', async () => {
+    window.history.pushState({}, '', '/admin/approval-org-exceptions');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === '/api/admin/approval-org-exceptions') {
+          return new Response(JSON.stringify([
+            {
+              id: 1,
+              approvalTypeId: 1,
+              organizationId: 3,
+              organizationName: '개발팀',
+              approverUserId: 18,
+              approverName: '개발팀장',
+              stepOrder: 2,
+              active: true
+            }
+          ]), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
+        return new Response(null, { status: 404 });
+      })
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '조직별 예외 결재자 관리' })).toBeInTheDocument();
+    expect(await screen.findByText('개발팀')).toBeInTheDocument();
+    expect(screen.getByText('개발팀장')).toBeInTheDocument();
+  });
 });

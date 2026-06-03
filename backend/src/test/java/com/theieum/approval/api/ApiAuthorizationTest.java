@@ -287,6 +287,41 @@ class ApiAuthorizationTest {
     }
 
     @Test
+    void adminCanManageOrganizationApprovalExceptions() throws Exception {
+        String adminToken = login("admin");
+        String applicantToken = login("employee01");
+        int beforeCount = approvalOrgExceptionCount();
+
+        mockMvc.perform(get("/api/admin/approval-org-exceptions")
+                        .header("Authorization", bearer(applicantToken)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/admin/approval-org-exceptions")
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].organizationName").value("개발팀"))
+                .andExpect(jsonPath("$[0].approverName").value("개발팀장"));
+
+        mockMvc.perform(post("/api/admin/approval-org-exceptions")
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "approvalTypeId": 1,
+                                  "organizationId": 4,
+                                  "approverUserId": 19,
+                                  "stepOrder": 1,
+                                  "active": true
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.organizationName").value("영업팀"))
+                .andExpect(jsonPath("$.approverName").value("영업팀장"));
+
+        assertThat(approvalOrgExceptionCount()).isEqualTo(beforeCount + 1);
+    }
+
+    @Test
     void applicantCanUpdateOwnDraftOnly() throws Exception {
         Application application = applicationService.createDraft(new ApplicationService.CreateDraftCommand(
                 3L,
@@ -465,6 +500,12 @@ class ApiAuthorizationTest {
     private int approvalLineStepCount() {
         return jdbcTemplate.queryForObject(
                 "select count(*) from approval_line_steps",
+                Integer.class);
+    }
+
+    private int approvalOrgExceptionCount() {
+        return jdbcTemplate.queryForObject(
+                "select count(*) from approval_org_exceptions",
                 Integer.class);
     }
 
