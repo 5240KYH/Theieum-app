@@ -26,6 +26,7 @@ test('영수증 신청부터 최종 승인 알림까지 처리한다', async ({ 
   await expect(page.getByRole('heading', { name: '신청서 상세' })).toBeVisible();
   await expect(page.getByText(uniqueVendor)).toBeVisible();
   await expect(page.getByText('결재중')).toBeVisible();
+  await expect(page.getByAltText('receipt.png 미리보기')).toBeVisible();
   await expect(page.getByLabel('결재 진행 상태').getByText('개발팀장')).toBeVisible();
   const applicationPath = new URL(page.url()).pathname;
 
@@ -42,6 +43,11 @@ test('영수증 신청부터 최종 승인 알림까지 처리한다', async ({ 
   await expect(page.getByRole('heading', { name: '신청서 상세' })).toBeVisible();
   await expect(page.getByText(uniqueVendor)).toBeVisible();
   await expect(page.getByText('승인완료')).toBeVisible();
+  const historyPanel = page.locator('section[aria-labelledby="approval-history-title"]');
+  const approvalHistoryRow = historyPanel.getByRole('row').filter({ hasText: 'E2E 승인' });
+  await expect(approvalHistoryRow).toBeVisible();
+  await expect(approvalHistoryRow).toContainText('개발팀장');
+  await expect(approvalHistoryRow).toContainText('승인');
 
   await page.getByLabel('알림함').click();
   await expect(page.getByText('최종 결재 완료').first()).toBeVisible();
