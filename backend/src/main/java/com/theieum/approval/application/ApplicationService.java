@@ -81,11 +81,20 @@ public class ApplicationService {
         if (application.getStatus() != ApplicationStatus.DRAFT) {
             throw new IllegalStateException("Only draft applications can receive attachments");
         }
+        User uploader = findActiveUser(uploaderId);
+        if (!application.getApplicant().getId().equals(uploader.getId())) {
+            throw new IllegalStateException("Only the applicant can attach receipts");
+        }
         if (contentType == null || !contentType.startsWith("image/")) {
             throw new IllegalArgumentException("Receipt attachment must be an image");
         }
+        if (bytes == null || bytes.length == 0) {
+            throw new IllegalArgumentException("Receipt attachment must not be empty");
+        }
+        if (!matchesImageSignature(contentType, bytes)) {
+            throw new IllegalArgumentException("Receipt attachment content does not match image type");
+        }
 
-        User uploader = findActiveUser(uploaderId);
         StoredFile storedFile = fileStorage.store(originalFilename, contentType, bytes);
         return attachmentRepository.save(new Attachment(application, originalFilename, storedFile, uploader));
     }
@@ -136,6 +145,33 @@ public class ApplicationService {
     private User findActiveUser(long userId) {
         return userRepository.findByIdAndActiveTrue(userId)
                 .orElseThrow(() -> new IllegalStateException("Active user not found: " + userId));
+    }
+
+    private boolean matchesImageSignature(String contentType, byte[] bytes) {
+        return switch (contentType) {
+            case "image/png" -> startsWith(bytes, 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a);
+            case "image/jpeg" -> startsWith(bytes, 0xff, 0xd8, 0xff);
+            case "image/gif" -> startsWith(bytes, 0x47, 0x49, 0x46, 0x38);
+            case "image/webp" -> startsWith(bytes, 0x52, 0x49, 0x46, 0x46)
+                    && bytes.length >= 12
+                    && bytes[8] == 0x57
+                    && bytes[9] == 0x45
+                    && bytes[10] == 0x42
+                    && bytes[11] == 0x50;
+            default -> false;
+        };
+    }
+
+    private boolean startsWith(byte[] bytes, int... signature) {
+        if (bytes.length < signature.length) {
+            return false;
+        }
+        for (int index = 0; index < signature.length; index++) {
+            if ((bytes[index] & 0xff) != signature[index]) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public record CreateDraftCommand(

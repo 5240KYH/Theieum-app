@@ -14,7 +14,7 @@ public class LocalFileStorage implements FileStorage {
 
     private final Path storageDirectory;
 
-    public LocalFileStorage(@Value("${app.attachments.storage-dir:${java.io.tmpdir}/theieum-attachments}") Path storageDirectory) {
+    public LocalFileStorage(@Value("${app.file-storage.root-path}") Path storageDirectory) {
         this.storageDirectory = storageDirectory;
     }
 

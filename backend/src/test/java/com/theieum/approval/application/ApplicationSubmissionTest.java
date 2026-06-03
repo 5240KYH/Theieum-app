@@ -8,7 +8,6 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
-import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.flyway.FlywayMigrationStrategy;
@@ -26,7 +25,7 @@ import com.theieum.approval.common.TestDatabaseHarness;
         "spring.flyway.clean-disabled=false",
         "spring.flyway.locations=classpath:db/migration,classpath:db/seed",
         "app.security.jwt-secret=test-jwt-secret-that-is-long-enough-for-hmac",
-        "app.attachments.storage-dir=/private/tmp/theieum-approval-test"
+        "app.file-storage.root-path=/private/tmp/theieum-approval-test"
 })
 class ApplicationSubmissionTest {
 
@@ -51,12 +50,18 @@ class ApplicationSubmissionTest {
                 3L,
                 "receipt.png",
                 "image/png",
-                new byte[] {1, 2, 3, 4});
+                pngBytes());
 
         Application submitted = applicationService.submit(application.getId(), 3L);
 
         assertThat(submitted.getStatus()).isEqualTo(ApplicationStatus.IN_APPROVAL);
         assertThat(submitted.getSubmittedAt()).isNotNull();
+
+        String filePath = jdbcTemplate.queryForObject(
+                "select file_path from attachments where application_id = ?",
+                String.class,
+                application.getId());
+        assertThat(filePath).startsWith("/private/tmp/theieum-approval-test/");
 
         List<Map<String, Object>> steps = jdbcTemplate.queryForList(
                 """
@@ -106,6 +111,85 @@ class ApplicationSubmissionTest {
     }
 
     @Test
+    void nonApplicantCannotAttachReceiptImage() {
+        Application application = createDefaultDraft();
+
+        assertThatThrownBy(() -> applicationService.attachReceiptImage(
+                        application.getId(),
+                        4L,
+                        "receipt.png",
+                        "image/png",
+                        pngBytes()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Only the applicant can attach receipts");
+    }
+
+    @Test
+    void emptyReceiptImageIsRejected() {
+        Application application = createDefaultDraft();
+
+        assertThatThrownBy(() -> applicationService.attachReceiptImage(
+                        application.getId(),
+                        3L,
+                        "receipt.png",
+                        "image/png",
+                        new byte[] {}))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Receipt attachment must not be empty");
+    }
+
+    @Test
+    void mismatchedReceiptImageSignatureIsRejected() {
+        Application application = createDefaultDraft();
+
+        assertThatThrownBy(() -> applicationService.attachReceiptImage(
+                        application.getId(),
+                        3L,
+                        "receipt.png",
+                        "image/png",
+                        new byte[] {1, 2, 3, 4}))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Receipt attachment content does not match image type");
+    }
+
+    @Test
+    void nonImageAttachmentIsRejected() {
+        Application application = createDefaultDraft();
+
+        assertThatThrownBy(() -> applicationService.attachReceiptImage(
+                        application.getId(),
+                        3L,
+                        "receipt.txt",
+                        "text/plain",
+                        new byte[] {1, 2, 3, 4}))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Receipt attachment must be an image");
+    }
+
+    @Test
+    void submittedApplicationCannotBeSubmittedAgain() {
+        Application application = createDefaultDraft();
+        attachDefaultPng(application.getId(), 3L);
+
+        applicationService.submit(application.getId(), 3L);
+
+        assertThatThrownBy(() -> applicationService.submit(application.getId(), 3L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Only draft applications can be submitted");
+
+        Integer stepCount = jdbcTemplate.queryForObject(
+                "select count(*) from application_approval_steps where application_id = ?",
+                Integer.class,
+                application.getId());
+        Integer notificationCount = jdbcTemplate.queryForObject(
+                "select count(*) from notification_events where application_id = ?",
+                Integer.class,
+                application.getId());
+        assertThat(stepCount).isEqualTo(1);
+        assertThat(notificationCount).isEqualTo(1);
+    }
+
+    @Test
     void submitApplicationRenumbersMultiApproverResolverStepsForSnapshot() {
         long approvalTypeId = 201L;
         jdbcTemplate.update(
@@ -147,7 +231,7 @@ class ApplicationSubmissionTest {
                 3L,
                 "receipt.png",
                 "image/png",
-                new byte[] {1, 2, 3, 4});
+                pngBytes());
 
         applicationService.submit(application.getId(), 3L);
 
@@ -180,6 +264,40 @@ class ApplicationSubmissionTest {
                 .containsEntry("notification_type", "APPROVAL_REQUESTED")
                 .containsEntry("channel", "IN_APP")
                 .containsEntry("status", "CREATED");
+    }
+
+    private Application createDefaultDraft() {
+        return applicationService.createDraft(new ApplicationService.CreateDraftCommand(
+                3L,
+                1L,
+                LocalDate.of(2026, 6, 3),
+                LocalDate.of(2026, 6, 2),
+                "테스트 상점",
+                new BigDecimal("12500.00"),
+                "점심 식대"));
+    }
+
+    private void attachDefaultPng(long applicationId, long uploaderId) {
+        applicationService.attachReceiptImage(
+                applicationId,
+                uploaderId,
+                "receipt.png",
+                "image/png",
+                pngBytes());
+    }
+
+    private byte[] pngBytes() {
+        return new byte[] {
+                (byte) 0x89,
+                0x50,
+                0x4e,
+                0x47,
+                0x0d,
+                0x0a,
+                0x1a,
+                0x0a,
+                0x00
+        };
     }
 
     @TestConfiguration
