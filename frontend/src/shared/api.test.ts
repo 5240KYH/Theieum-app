@@ -79,4 +79,21 @@ describe('api', () => {
     expect(listener).toHaveBeenCalledOnce();
     window.removeEventListener('auth:unauthorized', listener);
   });
+
+  it('403 응답은 인증 만료 이벤트로 처리하지 않는다', async () => {
+    const listener = vi.fn();
+    window.addEventListener('auth:unauthorized', listener);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ message: '권한이 없습니다.' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' }
+      }))
+    );
+
+    await expect(api('/approvals/inbox')).rejects.toBeInstanceOf(ApiError);
+
+    expect(listener).not.toHaveBeenCalled();
+    window.removeEventListener('auth:unauthorized', listener);
+  });
 });

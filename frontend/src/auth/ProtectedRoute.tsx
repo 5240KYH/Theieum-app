@@ -4,9 +4,10 @@ import { useAuth } from './AuthContext';
 
 interface ProtectedRouteProps {
   requiredRole?: string;
+  requiredAnyRole?: string[];
 }
 
-export function ProtectedRoute({ requiredRole }: ProtectedRouteProps) {
+export function ProtectedRoute({ requiredAnyRole, requiredRole }: ProtectedRouteProps) {
   const auth = useAuth();
   const location = useLocation();
 
@@ -15,6 +16,10 @@ export function ProtectedRoute({ requiredRole }: ProtectedRouteProps) {
   }
 
   if (requiredRole && !auth.hasRole(requiredRole)) {
+    return <Navigate replace to="/dashboard" />;
+  }
+
+  if (requiredAnyRole && !requiredAnyRole.some((role) => auth.hasRole(role))) {
     return <Navigate replace to="/dashboard" />;
   }
 

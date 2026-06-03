@@ -62,7 +62,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   });
 
   if (!response.ok) {
-    if (response.status === 401 || response.status === 403) {
+    if (response.status === 401) {
       window.dispatchEvent(new Event('auth:unauthorized'));
     }
     throw new ApiError(await parseError(response), response.status);

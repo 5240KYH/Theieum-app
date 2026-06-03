@@ -48,10 +48,16 @@ export function AppRoutes() {
         <Route element={<AppLayout />}>
           <Route index element={<Navigate replace to="/dashboard" />} />
           <Route path="/dashboard" element={<PlaceholderPage {...pages.dashboard} />} />
-          <Route path="/applications/new" element={<ApplicationForm />} />
-          <Route path="/applications/my" element={<MyApplicationsPage />} />
-          <Route path="/applications/:id" element={<ApplicationDetailPage />} />
-          <Route path="/approvals" element={<ApprovalsInboxPage />} />
+          <Route element={<ProtectedRoute requiredRole="APPLICANT" />}>
+            <Route path="/applications/new" element={<ApplicationForm />} />
+            <Route path="/applications/my" element={<MyApplicationsPage />} />
+          </Route>
+          <Route element={<ProtectedRoute requiredAnyRole={['APPLICANT', 'APPROVER', 'ADMIN']} />}>
+            <Route path="/applications/:id" element={<ApplicationDetailPage />} />
+          </Route>
+          <Route element={<ProtectedRoute requiredRole="APPROVER" />}>
+            <Route path="/approvals" element={<ApprovalsInboxPage />} />
+          </Route>
           <Route element={<ProtectedRoute requiredRole="ADMIN" />}>
             <Route path="/admin/users" element={<PlaceholderPage {...pages.adminUsers} />} />
             <Route path="/admin/organizations" element={<PlaceholderPage {...pages.adminOrganizations} />} />

@@ -87,6 +87,26 @@ describe('LoginPage', () => {
   });
 
   it('보호된 경로에서 로그인하면 요청했던 경로로 이동한다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        return new Response(
+          JSON.stringify({
+            accessToken: 'approver-token',
+            user: {
+              id: 2,
+              loginId: 'approver01',
+              name: '팀장01',
+              roles: ['APPROVER']
+            }
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          }
+        );
+      })
+    );
     window.history.pushState({}, '', '/approvals');
 
     render(<App />);
@@ -118,6 +138,24 @@ describe('LoginPage', () => {
       expect(screen.getByRole('heading', { name: '대시보드' })).toBeInTheDocument();
     });
     expect(screen.queryByRole('heading', { name: '사용자 관리' })).not.toBeInTheDocument();
+  });
+
+  it('역할이 없는 업무 경로에 접근해도 세션을 유지한 채 대시보드로 이동한다', async () => {
+    localStorage.setItem('accessToken', 'employee-token');
+    localStorage.setItem('authUser', JSON.stringify({
+      id: 3,
+      loginId: 'employee01',
+      name: '직원01',
+      roles: ['APPLICANT']
+    }));
+    window.history.pushState({}, '', '/approvals');
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: '대시보드' })).toBeInTheDocument();
+    });
+    expect(localStorage.getItem('accessToken')).toBe('employee-token');
   });
 
   it('저장된 인증 정보가 손상되면 로그인 상태를 초기화한다', async () => {

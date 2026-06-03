@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Eye, FileImage, Save, Send, Trash2, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -6,6 +6,14 @@ import { useAuth } from '../auth/AuthContext';
 import { ApiError } from '../shared/api';
 import { attachReceiptImage, createApplication, submitApplication } from './applicationApi';
 import { ApplicationResponse } from './applicationTypes';
+
+const MAX_RECEIPT_IMAGE_BYTES = 5 * 1024 * 1024;
+const SUPPORTED_RECEIPT_IMAGE_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp'
+]);
 
 function today() {
   const now = new Date();
@@ -38,11 +46,14 @@ export function ApplicationForm() {
   const [previewUrl, setPreviewUrl] = useState('');
   const [fileInputKey, setFileInputKey] = useState(0);
   const [draft, setDraft] = useState<ApplicationResponse | null>(null);
+  const [draftPayloadSignature, setDraftPayloadSignature] = useState('');
   const [attachedDraftId, setAttachedDraftId] = useState<number | null>(null);
   const [isPreviewOpen, setPreviewOpen] = useState(false);
   const [isSaving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const previewButtonRef = useRef<HTMLButtonElement | null>(null);
+  const previewCloseButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const isComplete = useMemo(() => {
     return Boolean(applicationDate && receiptDate && vendor.trim() && amount && description.trim() && receiptFile);
@@ -64,9 +75,56 @@ export function ApplicationForm() {
     return () => URL.revokeObjectURL(url);
   }, [receiptFile]);
 
+  useEffect(() => {
+    if (isPreviewOpen) {
+      previewCloseButtonRef.current?.focus();
+    }
+  }, [isPreviewOpen]);
+
+  function buildPayload() {
+    return {
+      applicationDate,
+      receiptDate,
+      vendor: vendor.trim(),
+      amount: Number(amount),
+      description: description.trim()
+    };
+  }
+
+  function closePreview() {
+    setPreviewOpen(false);
+    window.requestAnimationFrame(() => previewButtonRef.current?.focus());
+  }
+
+  function handlePreviewKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'Escape') {
+      closePreview();
+      return;
+    }
+
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      previewCloseButtonRef.current?.focus();
+    }
+  }
+
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null;
     if (!file) {
+      return;
+    }
+
+    if (!SUPPORTED_RECEIPT_IMAGE_TYPES.has(file.type)) {
+      clearFile();
+      setError('PNG, JPG, GIF, WebP 이미지만 첨부할 수 있습니다.');
+      setMessage('');
+      return;
+    }
+
+    if (file.size > MAX_RECEIPT_IMAGE_BYTES) {
+      clearFile();
+      setError('영수증 이미지는 5MB 이하로 첨부해주세요.');
+      setMessage('');
       return;
     }
 
@@ -98,16 +156,14 @@ export function ApplicationForm() {
   }
 
   async function saveDraft() {
-    const payload = {
-      applicationDate,
-      receiptDate,
-      vendor: vendor.trim(),
-      amount: Number(amount),
-      description: description.trim()
-    };
+    const payload = buildPayload();
+    const payloadSignature = JSON.stringify(payload);
+    const saved = draft && draftPayloadSignature === payloadSignature
+      ? draft
+      : await createApplication(payload);
 
-    const saved = draft ?? await createApplication(payload);
     setDraft(saved);
+    setDraftPayloadSignature(payloadSignature);
 
     if (receiptFile && attachedDraftId !== saved.id) {
       await attachReceiptImage(saved.id, receiptFile);
@@ -225,7 +281,7 @@ export function ApplicationForm() {
           <input
             key={fileInputKey}
             id="receipt-image"
-            accept="image/*"
+            accept="image/png,image/jpeg,image/gif,image/webp"
             type="file"
             onChange={handleFileChange}
           />
@@ -244,7 +300,12 @@ export function ApplicationForm() {
                 <span>{Math.ceil(receiptFile.size / 1024)}KB</span>
               </div>
               <div className="row-actions">
-                <button className="secondary-button" type="button" onClick={() => setPreviewOpen(true)}>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  ref={previewButtonRef}
+                  onClick={() => setPreviewOpen(true)}
+                >
                   <Eye aria-hidden="true" size={16} />
                   첨부 미리보기
                 </button>
@@ -282,11 +343,23 @@ export function ApplicationForm() {
       </form>
 
       {isPreviewOpen && receiptFile ? (
-        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="첨부 미리보기">
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="첨부 미리보기"
+          onKeyDown={handlePreviewKeyDown}
+        >
           <div className="preview-modal">
             <div className="table-toolbar">
               <strong>{receiptFile.name}</strong>
-              <button className="icon-button" type="button" aria-label="닫기" onClick={() => setPreviewOpen(false)}>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="닫기"
+                ref={previewCloseButtonRef}
+                onClick={closePreview}
+              >
                 <X aria-hidden="true" size={18} />
               </button>
             </div>
