@@ -3,6 +3,7 @@ import { api } from '../shared/api';
 import {
   AdminApplication,
   AdminApprovalLine,
+  AdminApprovalOrgException,
   AdminNotificationEvent,
   AdminOrganization,
   AdminOverrideResult,
@@ -39,6 +40,10 @@ export function getAdminPositions() {
 
 export function getAdminApprovalLines() {
   return api<AdminApprovalLine[]>('/admin/approval-lines');
+}
+
+export function getAdminApprovalOrgExceptions() {
+  return api<AdminApprovalOrgException[]>('/admin/approval-org-exceptions');
 }
 
 export { getApplication };

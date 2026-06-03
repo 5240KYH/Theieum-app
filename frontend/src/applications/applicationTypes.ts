@@ -1,4 +1,4 @@
-export type ApplicationStatus = 'DRAFT' | 'IN_APPROVAL' | 'APPROVED' | 'REJECTED' | string;
+export type ApplicationStatus = 'DRAFT' | 'IN_APPROVAL' | 'APPROVED' | 'REJECTED' | 'CANCELED' | string;
 export type ApprovalStepStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'ADMIN_APPROVED' | string;
 
 export interface UserSummary {
@@ -11,6 +11,18 @@ export interface ApprovalStepResponse {
   stepOrder: number;
   originalApprover: UserSummary;
   status: ApprovalStepStatus;
+  actedAt: string | null;
+}
+
+export interface ApprovalHistoryResponse {
+  id: number;
+  stepOrder: number | null;
+  action: ApprovalStepStatus;
+  originalApprover: UserSummary | null;
+  actor: UserSummary;
+  adminOverride: boolean;
+  adminReason: string | null;
+  comment: string | null;
   actedAt: string | null;
 }
 
@@ -28,6 +40,8 @@ export interface ApplicationResponse {
   completedAt: string | null;
   createdAt: string;
   approvalSteps: ApprovalStepResponse[];
+  attachments?: AttachmentResponse[];
+  approvalHistories?: ApprovalHistoryResponse[];
   adminOverride?: boolean;
   adminException?: boolean;
 }
@@ -53,7 +67,8 @@ export function applicationStatusLabel(status: ApplicationStatus) {
     DRAFT: '임시저장',
     IN_APPROVAL: '결재중',
     APPROVED: '승인완료',
-    REJECTED: '반려'
+    REJECTED: '반려',
+    CANCELED: '취소'
   };
 
   return labels[status] ?? status;
@@ -76,5 +91,6 @@ export function currentApprover(application: ApplicationResponse) {
 
 export function hasAdminException(application: ApplicationResponse) {
   return Boolean(application.adminOverride || application.adminException)
-    || application.approvalSteps.some((step) => step.status === 'ADMIN_APPROVED');
+    || application.approvalSteps.some((step) => step.status === 'ADMIN_APPROVED')
+    || Boolean(application.approvalHistories?.some((history) => history.adminOverride));
 }

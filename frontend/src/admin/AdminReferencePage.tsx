@@ -3,13 +3,20 @@ import { ReactNode, useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../shared/api';
 import {
   getAdminApprovalLines,
+  getAdminApprovalOrgExceptions,
   getAdminOrganizations,
   getAdminPositions,
   getAdminUsers
 } from './adminApi';
-import { AdminApprovalLine, AdminOrganization, AdminPosition, AdminUser } from './adminTypes';
+import {
+  AdminApprovalLine,
+  AdminApprovalOrgException,
+  AdminOrganization,
+  AdminPosition,
+  AdminUser
+} from './adminTypes';
 
-type AdminReferenceKind = 'users' | 'organizations' | 'positions' | 'approvalLines';
+type AdminReferenceKind = 'users' | 'organizations' | 'positions' | 'approvalLines' | 'approvalOrgExceptions';
 
 interface AdminReferencePageProps {
   kind: AdminReferenceKind;
@@ -106,6 +113,25 @@ function configs(): Record<AdminReferenceKind, PageConfig<unknown>> {
               {line.steps.map((step) => `${step.stepOrder}. ${step.stepType}`).join(' / ')}
             </td>
             <td>{line.active ? '활성' : '비활성'}</td>
+          </tr>
+        );
+      }
+    },
+    approvalOrgExceptions: {
+      title: '조직별 예외 결재자 관리',
+      description: '조직 단위로 기본 결재선 대신 적용할 예외 결재자를 확인합니다.',
+      load: getAdminApprovalOrgExceptions as () => Promise<unknown[]>,
+      headers: ['ID', '결재 유형', '조직', '예외 결재자', '단계', '상태'],
+      renderRow: (item) => {
+        const exception = item as AdminApprovalOrgException;
+        return (
+          <tr key={exception.id}>
+            <td>#{exception.id}</td>
+            <td>#{exception.approvalTypeId}</td>
+            <td>{exception.organizationName}</td>
+            <td>{exception.approverName}</td>
+            <td>{exception.stepOrder}</td>
+            <td>{exception.active ? '활성' : '비활성'}</td>
           </tr>
         );
       }

@@ -11,6 +11,6 @@ public record AuthenticatedUser(Long id, String loginId, String name, List<Strin
     }
 
     public UserSummary toSummary() {
-        return new UserSummary(id, name, roles);
+        return new UserSummary(id, loginId, name, roles);
     }
 }

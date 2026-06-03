@@ -66,6 +66,17 @@ export interface AdminApprovalLine {
   steps: ApprovalLineStep[];
 }
 
+export interface AdminApprovalOrgException {
+  id: number;
+  approvalTypeId: number;
+  organizationId: number;
+  organizationName: string;
+  approverUserId: number;
+  approverName: string;
+  stepOrder: number;
+  active: boolean;
+}
+
 export interface AdminOverrideResult {
   id: number;
   status: string;

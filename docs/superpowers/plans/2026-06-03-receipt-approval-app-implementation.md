@@ -1839,10 +1839,18 @@ git commit -m "docs: add task handoff workflow"
 ## Task 12: Playwright E2E 업무 흐름 검증
 
 **Files:**
+- Modify: `.gitignore`
+- Modify: `backend/src/main/java/com/theieum/approval/auth/UserSummary.java`
+- Modify: `backend/src/main/java/com/theieum/approval/auth/AuthenticatedUser.java`
+- Modify: `backend/src/test/java/com/theieum/approval/auth/AuthIntegrationTest.java`
+- Modify: `frontend/src/dashboard/DashboardPage.tsx`
+- Create: `frontend/src/dashboard/DashboardPage.test.tsx`
 - Create: `e2e/package.json`
+- Create: `e2e/package-lock.json`
 - Create: `e2e/playwright.config.ts`
 - Create: `e2e/tests/receipt-approval-flow.spec.ts`
 - Create: `e2e/fixtures/receipt.png`
+- Create: `docs/handoffs/2026-06-03-task-12-playwright-e2e-flow.md`
 
 - [ ] **Step 1: E2E 프로젝트 생성**
 
@@ -1896,10 +1904,11 @@ test('영수증 신청부터 최종 승인 알림까지 처리한다', async ({ 
   await page.getByLabel('신청 내용').fill('프로젝트 회의 준비물 구매');
   await page.getByLabel('영수증 이미지 첨부').setInputFiles('fixtures/receipt.png');
   await page.getByRole('button', { name: '제출' }).click();
-  await expect(page.getByText('결재 요청이 제출되었습니다')).toBeVisible();
+  await expect(page.getByRole('heading', { name: '신청서 상세' })).toBeVisible();
+  await expect(page.getByText('결재중')).toBeVisible();
 
   await page.goto('/login');
-  await page.getByLabel('아이디').fill('approver01');
+  await page.getByLabel('아이디').fill('lead-dev');
   await page.getByLabel('비밀번호').fill('password');
   await page.getByRole('button', { name: '로그인' }).click();
   await page.getByRole('link', { name: '결재함' }).click();
@@ -1910,7 +1919,9 @@ test('영수증 신청부터 최종 승인 알림까지 처리한다', async ({ 
   await page.getByLabel('아이디').fill('employee01');
   await page.getByLabel('비밀번호').fill('password');
   await page.getByRole('button', { name: '로그인' }).click();
-  await expect(page.getByText('최종 승인')).toBeVisible();
+  await expect(page.getByText('승인완료')).toBeVisible();
+  await page.getByLabel('알림함').click();
+  await expect(page.getByText('최종 결재 완료').first()).toBeVisible();
 });
 ```
 
@@ -1942,6 +1953,7 @@ Ensure seed users include:
 admin / password
 employee01 / password
 approver01 / password
+lead-dev / password
 ```
 
 Ensure frontend labels match:
@@ -1960,12 +1972,19 @@ Ensure frontend labels match:
 승인
 ```
 
+If the first E2E run exposes an API/frontend contract mismatch, add the smallest regression tests first. For Task 12 this includes:
+
+```text
+backend AuthIntegrationTest: login and /api/me include loginId.
+frontend DashboardPage.test: APPLICANT dashboard does not call /api/approvals/inbox.
+```
+
 - [ ] **Step 5: E2E 통과 확인**
 
 Run:
 
 ```bash
-docker compose up --build
+docker compose -p theieum_task12_e2e up --build -d postgres backend frontend
 ```
 
 In another terminal:
@@ -1978,6 +1997,12 @@ Expected:
 
 ```text
 1 passed
+```
+
+Clean up the E2E-only Compose project when verification is finished:
+
+```bash
+docker compose -p theieum_task12_e2e down -v
 ```
 
 - [ ] **Step 6: Commit**

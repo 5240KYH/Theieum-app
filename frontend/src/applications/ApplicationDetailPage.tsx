@@ -1,12 +1,13 @@
-import { FileImage, RefreshCcw } from 'lucide-react';
+import { FileImage, RefreshCcw, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
 import { ApiError } from '../shared/api';
-import { getApplication } from './applicationApi';
+import { cancelApplication, getApplication, getAttachmentContent } from './applicationApi';
 import {
   applicationStatusLabel,
   ApplicationResponse,
+  AttachmentResponse,
   approvalStepStatusLabel,
   currentApprover,
   hasAdminException
@@ -44,6 +45,20 @@ export function ApplicationDetailPage() {
     }
   }
 
+  async function handleCancelApplication() {
+    if (!application) {
+      return;
+    }
+
+    setError('');
+
+    try {
+      setApplication(await cancelApplication(application.id));
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+    }
+  }
+
   useEffect(() => {
     void loadApplication();
   }, [id]);
@@ -55,10 +70,18 @@ export function ApplicationDetailPage() {
           <p className="eyebrow">신청 업무</p>
           <h1 id="page-title">신청서 상세</h1>
         </div>
-        <button className="secondary-button" type="button" onClick={loadApplication}>
-          <RefreshCcw aria-hidden="true" size={16} />
-          새로고침
-        </button>
+        <div className="row-actions">
+          {application?.status === 'DRAFT' ? (
+            <button className="secondary-button danger-button" type="button" onClick={handleCancelApplication}>
+              <XCircle aria-hidden="true" size={16} />
+              신청 취소
+            </button>
+          ) : null}
+          <button className="secondary-button" type="button" onClick={loadApplication}>
+            <RefreshCcw aria-hidden="true" size={16} />
+            새로고침
+          </button>
+        </div>
       </div>
 
       {error ? <p className="form-error" role="alert">{error}</p> : null}
@@ -107,10 +130,22 @@ export function ApplicationDetailPage() {
 
             <section className="info-panel" aria-labelledby="attachment-title">
               <h2 id="attachment-title">첨부 이미지</h2>
-              <div className="empty-state large">
-                <FileImage aria-hidden="true" size={28} />
-                <span>첨부 이미지 조회 대기</span>
-              </div>
+              {application.attachments && application.attachments.length > 0 ? (
+                <div className="attachment-list">
+                  {application.attachments.map((attachment) => (
+                    <AttachmentPreview
+                      key={attachment.id}
+                      applicationId={application.id}
+                      attachment={attachment}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state large">
+                  <FileImage aria-hidden="true" size={28} />
+                  <span>첨부 이미지 없음</span>
+                </div>
+              )}
             </section>
           </div>
 
@@ -139,22 +174,28 @@ export function ApplicationDetailPage() {
                 <thead>
                   <tr>
                     <th>단계</th>
-                    <th>결재자</th>
+                    <th>원 결재자</th>
+                    <th>처리자</th>
                     <th>처리</th>
+                    <th>사유/메모</th>
                     <th>처리일</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {application.approvalSteps.length > 0 ? application.approvalSteps.map((step) => (
-                    <tr key={step.id}>
-                      <td>{step.stepOrder}</td>
-                      <td>{step.originalApprover.name}</td>
-                      <td>{approvalStepStatusLabel(step.status)}</td>
-                      <td>{formatDateTime(step.actedAt)}</td>
+                  {application.approvalHistories && application.approvalHistories.length > 0 ? (
+                    application.approvalHistories.map((history) => (
+                    <tr key={history.id}>
+                      <td>{history.stepOrder ?? '-'}</td>
+                      <td>{history.originalApprover?.name ?? '-'}</td>
+                      <td>{history.actor.name}</td>
+                      <td>{approvalStepStatusLabel(history.action)}</td>
+                      <td>{history.adminReason ?? history.comment ?? '-'}</td>
+                      <td>{formatDateTime(history.actedAt)}</td>
                     </tr>
-                  )) : (
+                    ))
+                  ) : (
                     <tr>
-                      <td colSpan={4}>결재 이력 없음</td>
+                      <td colSpan={6}>결재 이력 없음</td>
                     </tr>
                   )}
                 </tbody>
@@ -165,4 +206,65 @@ export function ApplicationDetailPage() {
       ) : null}
     </section>
   );
+}
+
+function AttachmentPreview({
+  applicationId,
+  attachment
+}: {
+  applicationId: number;
+  attachment: AttachmentResponse;
+}) {
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let objectUrl = '';
+    let isMounted = true;
+
+    getAttachmentContent(applicationId, attachment.id)
+      .then((blob) => {
+        objectUrl = URL.createObjectURL(blob);
+        if (isMounted) {
+          setPreviewUrl(objectUrl);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setError('첨부 이미지를 불러오지 못했습니다.');
+        }
+      });
+
+    return () => {
+      isMounted = false;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [applicationId, attachment.id]);
+
+  return (
+    <figure className="attachment-preview">
+      <div className="attachment-thumb">
+        {previewUrl ? (
+          <img src={previewUrl} alt={`${attachment.originalFilename} 미리보기`} />
+        ) : (
+          <FileImage aria-hidden="true" size={28} />
+        )}
+      </div>
+      <figcaption>
+        <strong>{attachment.originalFilename}</strong>
+        <span>{formatFileSize(attachment.fileSize)}</span>
+        {error ? <span className="form-error">{error}</span> : null}
+      </figcaption>
+    </figure>
+  );
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  return `${(bytes / 1024).toFixed(1)} KB`;
 }

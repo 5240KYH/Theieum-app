@@ -245,6 +245,43 @@ public class AdminController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR));
     }
 
+    @GetMapping("/approval-org-exceptions")
+    @Transactional(readOnly = true)
+    public List<ApprovalOrgExceptionResponse> approvalOrgExceptions(@AuthenticationPrincipal AuthenticatedUser user) {
+        requireAdmin(user);
+        return approvalOrgExceptionRows();
+    }
+
+    @PostMapping("/approval-org-exceptions")
+    @Transactional
+    public ApprovalOrgExceptionResponse createApprovalOrgException(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @Valid @RequestBody CreateApprovalOrgExceptionRequest request) {
+        requireAdmin(user);
+        validateApprovalOrgExceptionRequest(request);
+        Long id = jdbcTemplate.queryForObject(
+                """
+                insert into approval_org_exceptions (
+                    approval_type_id,
+                    organization_id,
+                    approver_user_id,
+                    step_order,
+                    active
+                ) values (?, ?, ?, ?, ?)
+                returning id
+                """,
+                Long.class,
+                request.approvalTypeId,
+                request.organizationId,
+                request.approverUserId,
+                request.stepOrder,
+                request.active == null || request.active);
+        return approvalOrgExceptionRows().stream()
+                .filter(exception -> exception.id().equals(id))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR));
+    }
+
     @PostMapping("/approvals/steps/{stepId}/approve")
     @Transactional
     public AdminApprovalResponse adminApprove(
@@ -292,6 +329,33 @@ public class AdminController {
                         toLong(row.get("position_id")),
                         toLong(row.get("direct_user_id")),
                         (String) row.get("sort_policy")))
+                .toList();
+    }
+
+    private List<ApprovalOrgExceptionResponse> approvalOrgExceptionRows() {
+        return jdbcTemplate.queryForList("""
+                select e.id,
+                       e.approval_type_id,
+                       e.organization_id,
+                       o.name as organization_name,
+                       e.approver_user_id,
+                       u.name as approver_name,
+                       e.step_order,
+                       e.active
+                from approval_org_exceptions e
+                join organizations o on o.id = e.organization_id
+                join users u on u.id = e.approver_user_id
+                order by e.id asc
+                """).stream()
+                .map(row -> new ApprovalOrgExceptionResponse(
+                        ((Number) row.get("id")).longValue(),
+                        ((Number) row.get("approval_type_id")).longValue(),
+                        ((Number) row.get("organization_id")).longValue(),
+                        (String) row.get("organization_name"),
+                        ((Number) row.get("approver_user_id")).longValue(),
+                        (String) row.get("approver_name"),
+                        ((Number) row.get("step_order")).intValue(),
+                        (Boolean) row.get("active")))
                 .toList();
     }
 
@@ -358,6 +422,12 @@ public class AdminController {
                 throw new IllegalArgumentException("ORG_POSITION step must not include directUserId");
             }
         }
+    }
+
+    private void validateApprovalOrgExceptionRequest(CreateApprovalOrgExceptionRequest request) {
+        requireExists("approval_types", request.approvalTypeId, "Approval type not found: " + request.approvalTypeId);
+        requireExists("organizations", request.organizationId, "Organization not found: " + request.organizationId);
+        requireActiveApprover(request.approverUserId);
     }
 
     private ApprovalStepType parseStepType(String value) {
@@ -449,6 +519,14 @@ public class AdminController {
             String sortPolicy) {
     }
 
+    public record CreateApprovalOrgExceptionRequest(
+            @NotNull Long approvalTypeId,
+            @NotNull Long organizationId,
+            @NotNull Long approverUserId,
+            @Positive int stepOrder,
+            Boolean active) {
+    }
+
     public record AdminApprovalRequest(@NotBlank String reason) {
     }
 
@@ -468,6 +546,17 @@ public class AdminController {
             Long positionId,
             Long directUserId,
             String sortPolicy) {
+    }
+
+    public record ApprovalOrgExceptionResponse(
+            Long id,
+            Long approvalTypeId,
+            Long organizationId,
+            String organizationName,
+            Long approverUserId,
+            String approverName,
+            int stepOrder,
+            boolean active) {
     }
 
     public record AdminApprovalResponse(Long id, String status) {

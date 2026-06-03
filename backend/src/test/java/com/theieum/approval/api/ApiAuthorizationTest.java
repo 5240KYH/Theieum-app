@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -125,6 +126,34 @@ class ApiAuthorizationTest {
     }
 
     @Test
+    void applicationDetailIncludesApprovalAuditHistories() throws Exception {
+        long applicationId = submitApplication(3L, 1L);
+        long stepId = stepId(applicationId, 1);
+        String adminToken = login("admin");
+        String applicantToken = login("employee01");
+
+        mockMvc.perform(post("/api/admin/approvals/steps/{stepId}/approve", stepId)
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "reason": "결재자 부재로 관리자 예외 승인"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/applications/{id}", applicationId)
+                        .header("Authorization", bearer(applicantToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.approvalHistories[0].stepOrder").value(1))
+                .andExpect(jsonPath("$.approvalHistories[0].action").value("ADMIN_APPROVED"))
+                .andExpect(jsonPath("$.approvalHistories[0].originalApprover.name").value("개발팀장"))
+                .andExpect(jsonPath("$.approvalHistories[0].actor.name").value("관리자"))
+                .andExpect(jsonPath("$.approvalHistories[0].adminOverride").value(true))
+                .andExpect(jsonPath("$.approvalHistories[0].adminReason").value("결재자 부재로 관리자 예외 승인"));
+    }
+
+    @Test
     void applicantCanReadOwnApplicationOnly() throws Exception {
         long ownApplicationId = submitApplication(3L, 1L);
         long othersApplicationId = submitApplication(4L, 1L);
@@ -196,6 +225,49 @@ class ApiAuthorizationTest {
     }
 
     @Test
+    void receiptAttachmentContentUsesApplicationReadPermission() throws Exception {
+        long applicationId = submitApplication(9L, 1L);
+        long attachmentId = attachmentId(applicationId);
+        String applicantToken = login("employee07");
+        String currentApproverToken = login("approver01");
+        String futureApproverToken = login("lead-sales");
+        String otherApplicantToken = login("employee01");
+        String adminToken = login("admin");
+
+        mockMvc.perform(get("/api/applications/{applicationId}/attachments/{attachmentId}/content",
+                        applicationId,
+                        attachmentId)
+                        .header("Authorization", bearer(applicantToken)))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertThat(result.getResponse().getContentType()).isEqualTo("image/png"))
+                .andExpect(result -> assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(pngBytes()));
+
+        mockMvc.perform(get("/api/applications/{applicationId}/attachments/{attachmentId}/content",
+                        applicationId,
+                        attachmentId)
+                        .header("Authorization", bearer(currentApproverToken)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/applications/{applicationId}/attachments/{attachmentId}/content",
+                        applicationId,
+                        attachmentId)
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/applications/{applicationId}/attachments/{attachmentId}/content",
+                        applicationId,
+                        attachmentId)
+                        .header("Authorization", bearer(futureApproverToken)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/applications/{applicationId}/attachments/{attachmentId}/content",
+                        applicationId,
+                        attachmentId)
+                        .header("Authorization", bearer(otherApplicantToken)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void approvalActionReturnsFrontendFriendlyStatusCodes() throws Exception {
         long applicationId = submitApplication(3L, 1L);
         String applicantToken = login("employee01");
@@ -240,6 +312,114 @@ class ApiAuthorizationTest {
                 .andExpect(status().isBadRequest());
 
         assertThat(approvalLineStepCount()).isEqualTo(beforeCount);
+    }
+
+    @Test
+    void adminCanManageOrganizationApprovalExceptions() throws Exception {
+        String adminToken = login("admin");
+        String applicantToken = login("employee01");
+        int beforeCount = approvalOrgExceptionCount();
+
+        mockMvc.perform(get("/api/admin/approval-org-exceptions")
+                        .header("Authorization", bearer(applicantToken)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/admin/approval-org-exceptions")
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].organizationName").value("개발팀"))
+                .andExpect(jsonPath("$[0].approverName").value("개발팀장"));
+
+        mockMvc.perform(post("/api/admin/approval-org-exceptions")
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "approvalTypeId": 1,
+                                  "organizationId": 4,
+                                  "approverUserId": 19,
+                                  "stepOrder": 1,
+                                  "active": false
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.organizationName").value("영업팀"))
+                .andExpect(jsonPath("$.approverName").value("영업팀장"))
+                .andExpect(jsonPath("$.active").value(false));
+
+        assertThat(approvalOrgExceptionCount()).isEqualTo(beforeCount + 1);
+    }
+
+    @Test
+    void applicantCanUpdateOwnDraftOnly() throws Exception {
+        Application application = applicationService.createDraft(new ApplicationService.CreateDraftCommand(
+                3L,
+                1L,
+                LocalDate.of(2026, 6, 3),
+                LocalDate.of(2026, 6, 2),
+                "테스트 상점",
+                new BigDecimal("12500.00"),
+                "점심 식대"));
+        String applicantToken = login("employee01");
+        String otherApplicantToken = login("employee07");
+
+        mockMvc.perform(put("/api/applications/{id}", application.getId())
+                        .header("Authorization", bearer(otherApplicantToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "applicationDate": "2026-06-04",
+                                  "receiptDate": "2026-06-03",
+                                  "vendor": "수정 상점",
+                                  "amount": 22000,
+                                  "description": "수정된 식대"
+                                }
+                                """))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(put("/api/applications/{id}", application.getId())
+                        .header("Authorization", bearer(applicantToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "applicationDate": "2026-06-04",
+                                  "receiptDate": "2026-06-03",
+                                  "vendor": "수정 상점",
+                                  "amount": 22000,
+                                  "description": "수정된 식대"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.vendor").value("수정 상점"))
+                .andExpect(jsonPath("$.amount").value(22000))
+                .andExpect(jsonPath("$.description").value("수정된 식대"));
+
+        assertThat(applicationVendor(application.getId())).isEqualTo("수정 상점");
+    }
+
+    @Test
+    void applicantCanCancelOwnDraftOnly() throws Exception {
+        Application application = applicationService.createDraft(new ApplicationService.CreateDraftCommand(
+                3L,
+                1L,
+                LocalDate.of(2026, 6, 3),
+                LocalDate.of(2026, 6, 2),
+                "테스트 상점",
+                new BigDecimal("12500.00"),
+                "점심 식대"));
+        String applicantToken = login("employee01");
+        String otherApplicantToken = login("employee07");
+
+        mockMvc.perform(post("/api/applications/{id}/cancel", application.getId())
+                        .header("Authorization", bearer(otherApplicantToken)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/applications/{id}/cancel", application.getId())
+                        .header("Authorization", bearer(applicantToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CANCELED"));
+
+        assertThat(applicationStatus(application.getId())).isEqualTo("CANCELED");
     }
 
     @Test
@@ -350,6 +530,37 @@ class ApiAuthorizationTest {
         return jdbcTemplate.queryForObject(
                 "select count(*) from approval_line_steps",
                 Integer.class);
+    }
+
+    private int approvalOrgExceptionCount() {
+        return jdbcTemplate.queryForObject(
+                "select count(*) from approval_org_exceptions",
+                Integer.class);
+    }
+
+    private String applicationVendor(long applicationId) {
+        return jdbcTemplate.queryForObject(
+                "select vendor from applications where id = ?",
+                String.class,
+                applicationId);
+    }
+
+    private String applicationStatus(long applicationId) {
+        return jdbcTemplate.queryForObject(
+                "select status from applications where id = ?",
+                String.class,
+                applicationId);
+    }
+
+    private long attachmentId(long applicationId) {
+        return jdbcTemplate.queryForObject(
+                """
+                select id
+                from attachments
+                where application_id = ?
+                """,
+                Long.class,
+                applicationId);
     }
 
     private byte[] pngBytes() {

@@ -31,6 +31,7 @@ const adminNavItems = [
   { to: '/admin/organizations', label: '조직 관리', icon: Building2 },
   { to: '/admin/positions', label: '직위 관리', icon: ShieldCheck },
   { to: '/admin/approval-lines', label: '결재선 관리', icon: Network },
+  { to: '/admin/approval-org-exceptions', label: '예외 결재자', icon: ShieldCheck },
   { to: '/admin/applications', label: '전체 신청서', icon: FileText },
   { to: '/admin/notifications', label: '알림 로그', icon: Bell }
 ];

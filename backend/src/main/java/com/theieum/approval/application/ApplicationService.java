@@ -76,6 +76,42 @@ public class ApplicationService {
                 command.description()));
     }
 
+    public Application updateDraft(UpdateDraftCommand command) {
+        Application application = findApplication(command.applicationId());
+        if (!application.getApplicant().getId().equals(command.actorId())) {
+            throw new ForbiddenOperationException("Only the applicant can update this application");
+        }
+        if (application.getStatus() != ApplicationStatus.DRAFT) {
+            throw new WorkflowConflictException("Only draft applications can be updated");
+        }
+        ApprovalType approvalType = entityManager.find(ApprovalType.class, command.approvalTypeId());
+        if (approvalType == null || !approvalType.isActive()) {
+            throw new ResourceNotFoundException("Active approval type not found: " + command.approvalTypeId());
+        }
+
+        application.updateDraft(
+                approvalType,
+                command.applicationDate(),
+                command.receiptDate(),
+                command.vendor(),
+                command.amount(),
+                command.description(),
+                Instant.now());
+        return application;
+    }
+
+    public Application cancelDraft(long applicationId, long actorId) {
+        Application application = findApplication(applicationId);
+        if (!application.getApplicant().getId().equals(actorId)) {
+            throw new ForbiddenOperationException("Only the applicant can cancel this application");
+        }
+        if (application.getStatus() != ApplicationStatus.DRAFT) {
+            throw new WorkflowConflictException("Only draft applications can be canceled");
+        }
+        application.cancelDraft(Instant.now());
+        return application;
+    }
+
     public Attachment attachReceiptImage(
             long applicationId,
             long uploaderId,
@@ -321,6 +357,17 @@ public class ApplicationService {
 
     public record CreateDraftCommand(
             Long applicantId,
+            Long approvalTypeId,
+            LocalDate applicationDate,
+            LocalDate receiptDate,
+            String vendor,
+            BigDecimal amount,
+            String description) {
+    }
+
+    public record UpdateDraftCommand(
+            Long applicationId,
+            Long actorId,
             Long approvalTypeId,
             LocalDate applicationDate,
             LocalDate receiptDate,

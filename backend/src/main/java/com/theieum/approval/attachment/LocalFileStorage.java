@@ -38,6 +38,15 @@ public class LocalFileStorage implements FileStorage {
         return new StoredFile(storedFilename, storedPath.toString(), bytes.length, contentType);
     }
 
+    @Override
+    public byte[] read(String path) {
+        try {
+            return Files.readAllBytes(Path.of(path));
+        } catch (IOException ex) {
+            throw new FileStorageException("Unable to read attachment", ex);
+        }
+    }
+
     private String extractExtension(String originalFilename) {
         if (originalFilename == null) {
             return "";

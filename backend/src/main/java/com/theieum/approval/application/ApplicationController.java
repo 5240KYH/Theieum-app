@@ -7,11 +7,14 @@ import java.time.LocalDate;
 import java.util.List;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -21,6 +24,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.theieum.approval.approval.ApprovalStepStatus;
 import com.theieum.approval.attachment.Attachment;
+import com.theieum.approval.attachment.AttachmentRepository;
+import com.theieum.approval.attachment.FileStorage;
 import com.theieum.approval.auth.AuthenticatedUser;
 
 import jakarta.validation.Valid;
@@ -37,14 +42,23 @@ public class ApplicationController {
     private final ApplicationService applicationService;
     private final ApplicationRepository applicationRepository;
     private final ApplicationApprovalStepRepository approvalStepRepository;
+    private final ApprovalHistoryRepository approvalHistoryRepository;
+    private final AttachmentRepository attachmentRepository;
+    private final FileStorage fileStorage;
 
     public ApplicationController(
             ApplicationService applicationService,
             ApplicationRepository applicationRepository,
-            ApplicationApprovalStepRepository approvalStepRepository) {
+            ApplicationApprovalStepRepository approvalStepRepository,
+            ApprovalHistoryRepository approvalHistoryRepository,
+            AttachmentRepository attachmentRepository,
+            FileStorage fileStorage) {
         this.applicationService = applicationService;
         this.applicationRepository = applicationRepository;
         this.approvalStepRepository = approvalStepRepository;
+        this.approvalHistoryRepository = approvalHistoryRepository;
+        this.attachmentRepository = attachmentRepository;
+        this.fileStorage = fileStorage;
     }
 
     @GetMapping("/my")
@@ -64,6 +78,25 @@ public class ApplicationController {
             @Valid @RequestBody CreateApplicationRequest request) {
         requireRole(user, "APPLICANT");
         Application application = applicationService.createDraft(new ApplicationService.CreateDraftCommand(
+                user.id(),
+                request.approvalTypeId == null ? 1L : request.approvalTypeId,
+                request.applicationDate == null ? LocalDate.now() : request.applicationDate,
+                request.receiptDate,
+                request.vendor,
+                request.amount,
+                request.description));
+        return toResponse(application);
+    }
+
+    @PutMapping("/{id}")
+    @Transactional
+    public ApplicationResponse update(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable long id,
+            @Valid @RequestBody CreateApplicationRequest request) {
+        requireRole(user, "APPLICANT");
+        Application application = applicationService.updateDraft(new ApplicationService.UpdateDraftCommand(
+                id,
                 user.id(),
                 request.approvalTypeId == null ? 1L : request.approvalTypeId,
                 request.applicationDate == null ? LocalDate.now() : request.applicationDate,
@@ -97,6 +130,25 @@ public class ApplicationController {
         return AttachmentResponse.from(attachment);
     }
 
+    @GetMapping("/{id}/attachments/{attachmentId}/content")
+    @Transactional(readOnly = true)
+    public ResponseEntity<byte[]> attachmentContent(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable long id,
+            @PathVariable long attachmentId) {
+        Application application = applicationRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        if (!canRead(user, application)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        }
+        Attachment attachment = attachmentRepository.findByIdAndApplicationId(attachmentId, id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(attachment.getMimeType()))
+                .body(fileStorage.read(attachment.getFilePath()));
+    }
+
     @PostMapping("/{id}/submit")
     @Transactional
     public ApplicationResponse submit(
@@ -104,6 +156,15 @@ public class ApplicationController {
             @PathVariable long id) {
         requireRole(user, "APPLICANT");
         return toResponse(applicationService.submit(id, user.id()));
+    }
+
+    @PostMapping("/{id}/cancel")
+    @Transactional
+    public ApplicationResponse cancel(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable long id) {
+        requireRole(user, "APPLICANT");
+        return toResponse(applicationService.cancelDraft(id, user.id()));
     }
 
     @GetMapping("/{id}")
@@ -125,7 +186,17 @@ public class ApplicationController {
                 .stream()
                 .map(ApprovalStepResponse::from)
                 .toList();
-        return ApplicationResponse.from(application, steps);
+        List<AttachmentResponse> attachments = attachmentRepository
+                .findByApplicationIdOrderByIdAsc(application.getId())
+                .stream()
+                .map(AttachmentResponse::from)
+                .toList();
+        List<ApprovalHistoryResponse> histories = approvalHistoryRepository
+                .findByApplicationIdOrderByIdAsc(application.getId())
+                .stream()
+                .map(ApprovalHistoryResponse::from)
+                .toList();
+        return ApplicationResponse.from(application, steps, attachments, histories);
     }
 
     private boolean canRead(AuthenticatedUser user, Application application) {
@@ -169,9 +240,15 @@ public class ApplicationController {
             Instant submittedAt,
             Instant completedAt,
             Instant createdAt,
-            List<ApprovalStepResponse> approvalSteps) {
+            List<ApprovalStepResponse> approvalSteps,
+            List<AttachmentResponse> attachments,
+            List<ApprovalHistoryResponse> approvalHistories) {
 
-        static ApplicationResponse from(Application application, List<ApprovalStepResponse> steps) {
+        static ApplicationResponse from(
+                Application application,
+                List<ApprovalStepResponse> steps,
+                List<AttachmentResponse> attachments,
+                List<ApprovalHistoryResponse> histories) {
             return new ApplicationResponse(
                     application.getId(),
                     UserSummary.from(application.getApplicant()),
@@ -185,7 +262,9 @@ public class ApplicationController {
                     application.getSubmittedAt(),
                     application.getCompletedAt(),
                     application.getCreatedAt(),
-                    steps);
+                    steps,
+                    attachments,
+                    histories);
         }
     }
 
@@ -225,6 +304,32 @@ public class ApplicationController {
                     attachment.getOriginalFilename(),
                     attachment.getMimeType(),
                     attachment.getFileSize());
+        }
+    }
+
+    public record ApprovalHistoryResponse(
+            Long id,
+            Integer stepOrder,
+            String action,
+            UserSummary originalApprover,
+            UserSummary actor,
+            boolean adminOverride,
+            String adminReason,
+            String comment,
+            Instant actedAt) {
+
+        static ApprovalHistoryResponse from(ApprovalHistory history) {
+            ApplicationApprovalStep step = history.getApprovalStep();
+            return new ApprovalHistoryResponse(
+                    history.getId(),
+                    step == null ? null : step.getStepOrder(),
+                    history.getAction(),
+                    history.getOriginalApprover() == null ? null : UserSummary.from(history.getOriginalApprover()),
+                    UserSummary.from(history.getActor()),
+                    history.isAdminOverride(),
+                    history.getAdminReason(),
+                    history.getComment(),
+                    history.getActedAt());
         }
     }
 }

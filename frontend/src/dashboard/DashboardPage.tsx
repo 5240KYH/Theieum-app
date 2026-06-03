@@ -5,6 +5,7 @@ import { getMyApplications } from '../applications/applicationApi';
 import { ApplicationResponse } from '../applications/applicationTypes';
 import { getApprovalInbox } from '../approvals/approvalApi';
 import { ApprovalInboxItem } from '../approvals/approvalTypes';
+import { useAuth } from '../auth/AuthContext';
 import { ApiError } from '../shared/api';
 import { getNotifications } from '../shared/notifications/notificationApi';
 import { NotificationItem } from '../shared/notifications/notificationTypes';
@@ -26,6 +27,7 @@ async function loadOrEmpty<T>(loader: () => Promise<T[]>) {
 }
 
 export function DashboardPage() {
+  const auth = useAuth();
   const [applications, setApplications] = useState<ApplicationResponse[]>([]);
   const [approvalInbox, setApprovalInbox] = useState<ApprovalInboxItem[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -40,7 +42,7 @@ export function DashboardPage() {
       try {
         const [myApplications, inbox, myNotifications] = await Promise.all([
           loadOrEmpty(getMyApplications),
-          loadOrEmpty(getApprovalInbox),
+          auth.hasRole('APPROVER') ? loadOrEmpty(getApprovalInbox) : Promise.resolve([]),
           loadOrEmpty(getNotifications)
         ]);
         if (!ignore) {
@@ -60,7 +62,7 @@ export function DashboardPage() {
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [auth]);
 
   const metrics = useMemo(() => {
     const inProgress = applications.filter((application) => application.status === 'IN_APPROVAL').length;

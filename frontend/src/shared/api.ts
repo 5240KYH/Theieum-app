@@ -70,3 +70,26 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
 
   return parseSuccess<T>(response);
 }
+
+export async function apiBlob(path: string, options: RequestInit = {}): Promise<Blob> {
+  const token = localStorage.getItem('accessToken');
+  const headers = new Headers(options.headers);
+
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
+  const response = await fetch(`/api${path}`, {
+    ...options,
+    headers
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      window.dispatchEvent(new Event('auth:unauthorized'));
+    }
+    throw new ApiError(await parseError(response), response.status);
+  }
+
+  return response.blob();
+}
