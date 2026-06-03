@@ -12,9 +12,12 @@ import {
   ShieldCheck,
   UsersRound
 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import { useAuth } from '../../auth/AuthContext';
+import { getNotifications } from '../notifications/notificationApi';
+import { NotificationDrawer } from '../notifications/NotificationDrawer';
 
 const workNavItems = [
   { to: '/dashboard', label: '대시보드', icon: LayoutDashboard },
@@ -36,10 +39,45 @@ export function AppLayout() {
   const auth = useAuth();
   const navigate = useNavigate();
   const isAdmin = auth.hasRole('ADMIN');
+  const [isNotificationOpen, setNotificationOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const notificationButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  const handleUnreadCountChange = useCallback((count: number) => {
+    setUnreadCount(count);
+  }, []);
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadUnreadCount() {
+      try {
+        const notifications = await getNotifications();
+        if (!ignore && Array.isArray(notifications)) {
+          setUnreadCount(notifications.filter((notification) => !notification.read).length);
+        }
+      } catch {
+        if (!ignore) {
+          setUnreadCount(0);
+        }
+      }
+    }
+
+    void loadUnreadCount();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   function handleLogout() {
     auth.logout();
     navigate('/login', { replace: true });
+  }
+
+  function closeNotifications() {
+    setNotificationOpen(false);
+    window.requestAnimationFrame(() => notificationButtonRef.current?.focus());
   }
 
   return (
@@ -83,8 +121,15 @@ export function AppLayout() {
             <strong>{auth.user?.name}</strong>
           </div>
           <div className="topbar-actions">
-            <button className="icon-button" type="button" aria-label="알림함">
+            <button
+              className="icon-button notification-button"
+              type="button"
+              aria-label="알림함"
+              ref={notificationButtonRef}
+              onClick={() => setNotificationOpen(true)}
+            >
               <Bell aria-hidden="true" size={18} />
+              {unreadCount > 0 ? <span className="notification-badge">{unreadCount}</span> : null}
             </button>
             <button className="secondary-button" type="button" onClick={handleLogout}>
               <LogOut aria-hidden="true" size={18} />
@@ -97,6 +142,12 @@ export function AppLayout() {
           <Outlet />
         </main>
       </div>
+      {isNotificationOpen ? (
+        <NotificationDrawer
+          onClose={closeNotifications}
+          onUnreadCountChange={handleUnreadCountChange}
+        />
+      ) : null}
     </div>
   );
 }

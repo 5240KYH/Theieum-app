@@ -87,6 +87,7 @@ describe('ApplicationForm', () => {
     vi.stubGlobal('fetch', vi.fn());
 
     render(<App />);
+    vi.mocked(fetch).mockClear();
 
     await userEvent.click(screen.getByRole('button', { name: '제출' }));
 
@@ -272,6 +273,7 @@ describe('ApplicationForm', () => {
   it('지원하지 않는 이미지 형식이나 5MB 초과 파일은 첨부하지 않는다', async () => {
     vi.stubGlobal('fetch', vi.fn());
     render(<App />);
+    vi.mocked(fetch).mockClear();
 
     const fileInput = screen.getByLabelText('영수증 이미지 첨부');
     expect(fileInput).toHaveAttribute('accept', 'image/png,image/jpeg,image/gif,image/webp');
