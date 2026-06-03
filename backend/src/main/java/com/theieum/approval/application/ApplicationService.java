@@ -158,8 +158,9 @@ public class ApplicationService {
                 actor,
                 false,
                 null,
-                normalizeOptional(comment)));
-        advanceAfterApprovedStep(step.getApplication());
+                normalizeOptional(comment),
+                actedAt));
+        advanceAfterApprovedStep(step.getApplication(), actedAt);
         return step.getApplication();
     }
 
@@ -184,7 +185,8 @@ public class ApplicationService {
                 actor,
                 false,
                 null,
-                rejectionComment));
+                rejectionComment,
+                actedAt));
         notificationEventService.createApplicationRejected(step.getApplication());
         return step.getApplication();
     }
@@ -209,9 +211,10 @@ public class ApplicationService {
                 admin,
                 true,
                 adminReason,
-                null));
+                null,
+                actedAt));
         notificationEventService.createAdminApproved(step.getApplication());
-        advanceAfterApprovedStep(step.getApplication());
+        advanceAfterApprovedStep(step.getApplication(), actedAt);
         return step.getApplication();
     }
 
@@ -221,7 +224,7 @@ public class ApplicationService {
     }
 
     private ApplicationApprovalStep findApprovalStep(long stepId) {
-        return approvalStepRepository.findById(stepId)
+        return approvalStepRepository.findLockedById(stepId)
                 .orElseThrow(() -> new IllegalStateException("Approval step not found: " + stepId));
     }
 
@@ -241,7 +244,7 @@ public class ApplicationService {
             throw new IllegalStateException("Only pending approval steps can be processed");
         }
         ApplicationApprovalStep currentStep = approvalStepRepository
-                .findByApplicationIdOrderByStepOrderAsc(step.getApplication().getId())
+                .findLockedByApplicationIdOrderByStepOrderAsc(step.getApplication().getId())
                 .stream()
                 .filter(candidate -> candidate.getStatus() == ApprovalStepStatus.PENDING)
                 .findFirst()
@@ -251,15 +254,15 @@ public class ApplicationService {
         }
     }
 
-    private void advanceAfterApprovedStep(Application application) {
-        approvalStepRepository.findByApplicationIdOrderByStepOrderAsc(application.getId())
+    private void advanceAfterApprovedStep(Application application, Instant actedAt) {
+        approvalStepRepository.findLockedByApplicationIdOrderByStepOrderAsc(application.getId())
                 .stream()
                 .filter(step -> step.getStatus() == ApprovalStepStatus.PENDING)
                 .findFirst()
                 .ifPresentOrElse(
                         nextStep -> notificationEventService.createApprovalRequested(application, nextStep.getOriginalApprover()),
                         () -> {
-                            application.approve(Instant.now());
+                            application.approve(actedAt);
                             notificationEventService.createApplicationApproved(application);
                         });
     }

@@ -1,5 +1,7 @@
 package com.theieum.approval.notification;
 
+import java.util.List;
+
 import org.springframework.stereotype.Service;
 
 import com.theieum.approval.application.Application;
@@ -9,13 +11,17 @@ import com.theieum.approval.user.User;
 public class NotificationEventService {
 
     private final NotificationEventRepository notificationEventRepository;
+    private final List<NotificationSender> notificationSenders;
 
-    public NotificationEventService(NotificationEventRepository notificationEventRepository) {
+    public NotificationEventService(
+            NotificationEventRepository notificationEventRepository,
+            List<NotificationSender> notificationSenders) {
         this.notificationEventRepository = notificationEventRepository;
+        this.notificationSenders = notificationSenders;
     }
 
     public NotificationEvent createApprovalRequested(Application application, User firstApprover) {
-        return notificationEventRepository.save(new NotificationEvent(
+        return saveAndDispatch(new NotificationEvent(
                 firstApprover,
                 application,
                 NotificationType.APPROVAL_REQUESTED,
@@ -24,7 +30,7 @@ public class NotificationEventService {
     }
 
     public NotificationEvent createApplicationApproved(Application application) {
-        return notificationEventRepository.save(new NotificationEvent(
+        return saveAndDispatch(new NotificationEvent(
                 application.getApplicant(),
                 application,
                 NotificationType.APPLICATION_APPROVED,
@@ -33,7 +39,7 @@ public class NotificationEventService {
     }
 
     public NotificationEvent createApplicationRejected(Application application) {
-        return notificationEventRepository.save(new NotificationEvent(
+        return saveAndDispatch(new NotificationEvent(
                 application.getApplicant(),
                 application,
                 NotificationType.APPLICATION_REJECTED,
@@ -42,11 +48,20 @@ public class NotificationEventService {
     }
 
     public NotificationEvent createAdminApproved(Application application) {
-        return notificationEventRepository.save(new NotificationEvent(
+        return saveAndDispatch(new NotificationEvent(
                 application.getApplicant(),
                 application,
                 NotificationType.ADMIN_APPROVED,
                 "관리자 예외 결재가 처리되었습니다",
                 application.getVendor() + " 영수증 신청서가 관리자 예외 결재로 처리되었습니다."));
+    }
+
+    private NotificationEvent saveAndDispatch(NotificationEvent event) {
+        NotificationEvent savedEvent = notificationEventRepository.save(event);
+        notificationSenders.stream()
+                .filter(NotificationSender::enabled)
+                .filter(sender -> sender.channel() == savedEvent.getChannel())
+                .forEach(sender -> sender.send(savedEvent));
+        return savedEvent;
     }
 }

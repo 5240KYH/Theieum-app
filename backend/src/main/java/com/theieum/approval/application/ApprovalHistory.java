@@ -49,7 +49,7 @@ public class ApprovalHistory {
 
     private String comment;
 
-    @Column(name = "acted_at", nullable = false, insertable = false, updatable = false)
+    @Column(name = "acted_at", nullable = false)
     private Instant actedAt;
 
     protected ApprovalHistory() {
@@ -63,7 +63,8 @@ public class ApprovalHistory {
             User actor,
             boolean adminOverride,
             String adminReason,
-            String comment) {
+            String comment,
+            Instant actedAt) {
         this.application = application;
         this.approvalStep = approvalStep;
         this.action = action;
@@ -72,6 +73,7 @@ public class ApprovalHistory {
         this.adminOverride = adminOverride;
         this.adminReason = adminReason;
         this.comment = comment;
+        this.actedAt = actedAt;
     }
 
     public Long getId() {
