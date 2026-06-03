@@ -150,6 +150,31 @@ class ApprovalActionTest {
     }
 
     @Test
+    void adminOverrideOnIntermediateStepNotifiesApplicantAndNextApprover() {
+        long applicationId = submitMultiApproverApplication();
+        long stepId = stepId(applicationId, 1);
+
+        applicationService.adminApprove(stepId, 1L, "결재자 부재로 관리자 예외 승인");
+
+        assertThat(applicationStatus(applicationId)).isEqualTo("IN_APPROVAL");
+        assertThat(stepStatus(applicationId, 1)).isEqualTo("ADMIN_APPROVED");
+        assertThat(stepStatus(applicationId, 2)).isEqualTo("PENDING");
+
+        List<Map<String, Object>> notifications = notifications(applicationId);
+        assertThat(notifications).hasSize(3);
+        assertThat(notifications.get(1))
+                .containsEntry("recipient_id", 3L)
+                .containsEntry("notification_type", "ADMIN_APPROVED")
+                .containsEntry("channel", "IN_APP")
+                .containsEntry("status", "CREATED");
+        assertThat(notifications.get(2))
+                .containsEntry("recipient_id", 4L)
+                .containsEntry("notification_type", "APPROVAL_REQUESTED")
+                .containsEntry("channel", "IN_APP")
+                .containsEntry("status", "CREATED");
+    }
+
+    @Test
     void adminOverrideCannotActOnCompletedApplication() {
         long applicationId = submitDefaultApplication();
         long stepId = stepId(applicationId, 1);
@@ -168,7 +193,9 @@ class ApprovalActionTest {
     }
 
     private long submitMultiApproverApplication() {
-        long approvalTypeId = 301L;
+        long approvalTypeId = nextId("approval_types");
+        long approvalLineId = nextId("approval_lines");
+        long approvalLineStepId = nextId("approval_line_steps");
         jdbcTemplate.update(
                 "insert into approval_types (id, name, description, active) values (?, ?, ?, true)",
                 approvalTypeId,
@@ -176,7 +203,7 @@ class ApprovalActionTest {
                 "test approval type");
         jdbcTemplate.update(
                 "insert into approval_lines (id, approval_type_id, name, active) values (?, ?, ?, true)",
-                301L,
+                approvalLineId,
                 approvalTypeId,
                 "다중 결재자 결재선");
         jdbcTemplate.update(
@@ -191,14 +218,19 @@ class ApprovalActionTest {
                     sort_policy
                 ) values (?, ?, ?, 'ORG_POSITION', 'APPLICANT_ORG', ?, 'POSITION_ORDER')
                 """,
-                301L,
-                301L,
+                approvalLineStepId,
+                approvalLineId,
                 1,
                 1L);
         Application application = createDraft(approvalTypeId);
         attachDefaultPng(application.getId());
         applicationService.submit(application.getId(), 3L);
         return application.getId();
+    }
+
+    private long nextId(String tableName) {
+        Long maxId = jdbcTemplate.queryForObject("select coalesce(max(id), 0) from " + tableName, Long.class);
+        return maxId + 1;
     }
 
     private Application createDraft(long approvalTypeId) {

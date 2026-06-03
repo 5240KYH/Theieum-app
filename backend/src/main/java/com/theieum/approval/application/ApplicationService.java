@@ -210,6 +210,7 @@ public class ApplicationService {
                 true,
                 adminReason,
                 null));
+        notificationEventService.createAdminApproved(step.getApplication());
         advanceAfterApprovedStep(step.getApplication());
         return step.getApplication();
     }

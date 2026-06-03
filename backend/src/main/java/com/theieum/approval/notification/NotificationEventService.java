@@ -40,4 +40,13 @@ public class NotificationEventService {
                 "신청서가 반려되었습니다",
                 application.getVendor() + " 영수증 신청서가 반려되었습니다."));
     }
+
+    public NotificationEvent createAdminApproved(Application application) {
+        return notificationEventRepository.save(new NotificationEvent(
+                application.getApplicant(),
+                application,
+                NotificationType.ADMIN_APPROVED,
+                "관리자 예외 결재가 처리되었습니다",
+                application.getVendor() + " 영수증 신청서가 관리자 예외 결재로 처리되었습니다."));
+    }
 }
