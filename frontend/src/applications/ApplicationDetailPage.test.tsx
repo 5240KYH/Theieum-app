@@ -168,4 +168,45 @@ describe('ApplicationDetailPage', () => {
       method: 'POST'
     }));
   });
+
+  it('결재 이력에서 실제 처리자와 관리자 예외 사유를 표시한다', async () => {
+    const auditedResponse = {
+      ...applicationResponse,
+      attachments: [],
+      approvalHistories: [
+        {
+          id: 801,
+          stepOrder: 1,
+          action: 'ADMIN_APPROVED',
+          originalApprover: { id: 18, name: '개발팀장' },
+          actor: { id: 1, name: '관리자' },
+          adminOverride: true,
+          adminReason: '결재자 부재로 관리자 예외 승인',
+          comment: null,
+          actedAt: '2026-06-03T02:00:00Z'
+        }
+      ]
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === '/api/applications/100') {
+          return new Response(JSON.stringify(auditedResponse), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
+        return new Response(null, { status: 404 });
+      })
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '신청서 상세' })).toBeInTheDocument();
+    expect(await screen.findByText('관리자')).toBeInTheDocument();
+    expect(screen.getByText('개발팀장')).toBeInTheDocument();
+    expect(screen.getByText('관리자 승인')).toBeInTheDocument();
+    expect(screen.getByText('결재자 부재로 관리자 예외 승인')).toBeInTheDocument();
+  });
 });

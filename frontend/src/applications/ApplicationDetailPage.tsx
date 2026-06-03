@@ -174,22 +174,28 @@ export function ApplicationDetailPage() {
                 <thead>
                   <tr>
                     <th>단계</th>
-                    <th>결재자</th>
+                    <th>원 결재자</th>
+                    <th>처리자</th>
                     <th>처리</th>
+                    <th>사유/메모</th>
                     <th>처리일</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {application.approvalSteps.length > 0 ? application.approvalSteps.map((step) => (
-                    <tr key={step.id}>
-                      <td>{step.stepOrder}</td>
-                      <td>{step.originalApprover.name}</td>
-                      <td>{approvalStepStatusLabel(step.status)}</td>
-                      <td>{formatDateTime(step.actedAt)}</td>
+                  {application.approvalHistories && application.approvalHistories.length > 0 ? (
+                    application.approvalHistories.map((history) => (
+                    <tr key={history.id}>
+                      <td>{history.stepOrder ?? '-'}</td>
+                      <td>{history.originalApprover?.name ?? '-'}</td>
+                      <td>{history.actor.name}</td>
+                      <td>{approvalStepStatusLabel(history.action)}</td>
+                      <td>{history.adminReason ?? history.comment ?? '-'}</td>
+                      <td>{formatDateTime(history.actedAt)}</td>
                     </tr>
-                  )) : (
+                    ))
+                  ) : (
                     <tr>
-                      <td colSpan={4}>결재 이력 없음</td>
+                      <td colSpan={6}>결재 이력 없음</td>
                     </tr>
                   )}
                 </tbody>

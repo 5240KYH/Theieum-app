@@ -126,6 +126,34 @@ class ApiAuthorizationTest {
     }
 
     @Test
+    void applicationDetailIncludesApprovalAuditHistories() throws Exception {
+        long applicationId = submitApplication(3L, 1L);
+        long stepId = stepId(applicationId, 1);
+        String adminToken = login("admin");
+        String applicantToken = login("employee01");
+
+        mockMvc.perform(post("/api/admin/approvals/steps/{stepId}/approve", stepId)
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "reason": "결재자 부재로 관리자 예외 승인"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/applications/{id}", applicationId)
+                        .header("Authorization", bearer(applicantToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.approvalHistories[0].stepOrder").value(1))
+                .andExpect(jsonPath("$.approvalHistories[0].action").value("ADMIN_APPROVED"))
+                .andExpect(jsonPath("$.approvalHistories[0].originalApprover.name").value("개발팀장"))
+                .andExpect(jsonPath("$.approvalHistories[0].actor.name").value("관리자"))
+                .andExpect(jsonPath("$.approvalHistories[0].adminOverride").value(true))
+                .andExpect(jsonPath("$.approvalHistories[0].adminReason").value("결재자 부재로 관리자 예외 승인"));
+    }
+
+    @Test
     void applicantCanReadOwnApplicationOnly() throws Exception {
         long ownApplicationId = submitApplication(3L, 1L);
         long othersApplicationId = submitApplication(4L, 1L);

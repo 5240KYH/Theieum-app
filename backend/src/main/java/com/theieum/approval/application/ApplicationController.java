@@ -42,6 +42,7 @@ public class ApplicationController {
     private final ApplicationService applicationService;
     private final ApplicationRepository applicationRepository;
     private final ApplicationApprovalStepRepository approvalStepRepository;
+    private final ApprovalHistoryRepository approvalHistoryRepository;
     private final AttachmentRepository attachmentRepository;
     private final FileStorage fileStorage;
 
@@ -49,11 +50,13 @@ public class ApplicationController {
             ApplicationService applicationService,
             ApplicationRepository applicationRepository,
             ApplicationApprovalStepRepository approvalStepRepository,
+            ApprovalHistoryRepository approvalHistoryRepository,
             AttachmentRepository attachmentRepository,
             FileStorage fileStorage) {
         this.applicationService = applicationService;
         this.applicationRepository = applicationRepository;
         this.approvalStepRepository = approvalStepRepository;
+        this.approvalHistoryRepository = approvalHistoryRepository;
         this.attachmentRepository = attachmentRepository;
         this.fileStorage = fileStorage;
     }
@@ -188,7 +191,12 @@ public class ApplicationController {
                 .stream()
                 .map(AttachmentResponse::from)
                 .toList();
-        return ApplicationResponse.from(application, steps, attachments);
+        List<ApprovalHistoryResponse> histories = approvalHistoryRepository
+                .findByApplicationIdOrderByIdAsc(application.getId())
+                .stream()
+                .map(ApprovalHistoryResponse::from)
+                .toList();
+        return ApplicationResponse.from(application, steps, attachments, histories);
     }
 
     private boolean canRead(AuthenticatedUser user, Application application) {
@@ -233,12 +241,14 @@ public class ApplicationController {
             Instant completedAt,
             Instant createdAt,
             List<ApprovalStepResponse> approvalSteps,
-            List<AttachmentResponse> attachments) {
+            List<AttachmentResponse> attachments,
+            List<ApprovalHistoryResponse> approvalHistories) {
 
         static ApplicationResponse from(
                 Application application,
                 List<ApprovalStepResponse> steps,
-                List<AttachmentResponse> attachments) {
+                List<AttachmentResponse> attachments,
+                List<ApprovalHistoryResponse> histories) {
             return new ApplicationResponse(
                     application.getId(),
                     UserSummary.from(application.getApplicant()),
@@ -253,7 +263,8 @@ public class ApplicationController {
                     application.getCompletedAt(),
                     application.getCreatedAt(),
                     steps,
-                    attachments);
+                    attachments,
+                    histories);
         }
     }
 
@@ -293,6 +304,32 @@ public class ApplicationController {
                     attachment.getOriginalFilename(),
                     attachment.getMimeType(),
                     attachment.getFileSize());
+        }
+    }
+
+    public record ApprovalHistoryResponse(
+            Long id,
+            Integer stepOrder,
+            String action,
+            UserSummary originalApprover,
+            UserSummary actor,
+            boolean adminOverride,
+            String adminReason,
+            String comment,
+            Instant actedAt) {
+
+        static ApprovalHistoryResponse from(ApprovalHistory history) {
+            ApplicationApprovalStep step = history.getApprovalStep();
+            return new ApprovalHistoryResponse(
+                    history.getId(),
+                    step == null ? null : step.getStepOrder(),
+                    history.getAction(),
+                    history.getOriginalApprover() == null ? null : UserSummary.from(history.getOriginalApprover()),
+                    UserSummary.from(history.getActor()),
+                    history.isAdminOverride(),
+                    history.getAdminReason(),
+                    history.getComment(),
+                    history.getActedAt());
         }
     }
 }

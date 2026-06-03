@@ -14,6 +14,18 @@ export interface ApprovalStepResponse {
   actedAt: string | null;
 }
 
+export interface ApprovalHistoryResponse {
+  id: number;
+  stepOrder: number | null;
+  action: ApprovalStepStatus;
+  originalApprover: UserSummary | null;
+  actor: UserSummary;
+  adminOverride: boolean;
+  adminReason: string | null;
+  comment: string | null;
+  actedAt: string | null;
+}
+
 export interface ApplicationResponse {
   id: number;
   applicant: UserSummary;
@@ -29,6 +41,7 @@ export interface ApplicationResponse {
   createdAt: string;
   approvalSteps: ApprovalStepResponse[];
   attachments?: AttachmentResponse[];
+  approvalHistories?: ApprovalHistoryResponse[];
   adminOverride?: boolean;
   adminException?: boolean;
 }
@@ -78,5 +91,6 @@ export function currentApprover(application: ApplicationResponse) {
 
 export function hasAdminException(application: ApplicationResponse) {
   return Boolean(application.adminOverride || application.adminException)
-    || application.approvalSteps.some((step) => step.status === 'ADMIN_APPROVED');
+    || application.approvalSteps.some((step) => step.status === 'ADMIN_APPROVED')
+    || Boolean(application.approvalHistories?.some((history) => history.adminOverride));
 }
