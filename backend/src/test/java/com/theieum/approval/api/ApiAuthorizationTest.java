@@ -339,12 +339,13 @@ class ApiAuthorizationTest {
                                   "organizationId": 4,
                                   "approverUserId": 19,
                                   "stepOrder": 1,
-                                  "active": true
+                                  "active": false
                                 }
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.organizationName").value("영업팀"))
-                .andExpect(jsonPath("$.approverName").value("영업팀장"));
+                .andExpect(jsonPath("$.approverName").value("영업팀장"))
+                .andExpect(jsonPath("$.active").value(false));
 
         assertThat(approvalOrgExceptionCount()).isEqualTo(beforeCount + 1);
     }
