@@ -19,6 +19,37 @@ npm run build
 SPRING_PROFILES_ACTIVE=local JWT_SECRET=change-this-local-secret ./gradlew bootRun
 ```
 
+## Docker 앱 실행
+
+백엔드, 프론트엔드, PostgreSQL을 한 번에 실행합니다.
+
+```bash
+docker compose up --build
+```
+
+접속 주소는 다음과 같습니다.
+
+- 프론트엔드: `http://localhost:3000`
+- 백엔드 API: `http://localhost:8080/api`
+- PostgreSQL: `localhost:5432`
+
+Docker Compose 실행은 MVP 확인을 위해 `local` profile을 사용하므로 seed 계정이 함께 생성됩니다.
+
+| 역할 | 아이디 | 비밀번호 |
+| --- | --- | --- |
+| 관리자 | `admin` | `password` |
+| 기안자/결재자 | `employee01` | `password` |
+| 결재자 | `approver01` | `password` |
+
+운영 배포 전에는 `docker-compose.yml`의 `JWT_SECRET`, DB 비밀번호, 파일 저장 경로를 환경별 secret으로 교체해야 합니다. `JWT_SECRET`은 애플리케이션이 금지하는 공유 기본값과 달라야 하며, 충분히 긴 난수 문자열을 사용하세요. 현재 frontend 컨테이너는 nginx가 `/api/*` 요청을 backend 컨테이너로 프록시합니다.
+
+기존 개발 DB 볼륨에 이전 seed 마이그레이션이 적용되어 있었다면 백엔드 시작 시 Flyway checksum 오류가 날 수 있습니다. 이 경우 개발 DB를 보존해야 하는지 먼저 판단한 뒤, 새 MVP 데이터를 다시 넣어도 되는 로컬 환경에서는 다음 명령으로 볼륨을 초기화하세요.
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+
 ## 데이터베이스 하네스
 
 일반 개발 DB는 영속 볼륨을 사용하는 `postgres` 서비스입니다.

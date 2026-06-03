@@ -15,6 +15,34 @@ services:
       timeout: 5s
       retries: 10
 
+  backend:
+    build: ./backend
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: approval
+      DB_USERNAME: approval
+      DB_PASSWORD: approval
+      FILE_STORAGE_ROOT: /app/uploads
+      JWT_SECRET: theieum-compose-local-jwt-secret-change-before-deploy-2026
+    ports:
+      - "8080:8080"
+    volumes:
+      - upload-data:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
   postgres-test:
     image: postgres:16
     environment:
@@ -33,3 +61,4 @@ services:
 
 volumes:
   postgres-data:
+  upload-data:
