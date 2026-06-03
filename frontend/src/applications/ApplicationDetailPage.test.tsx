@@ -122,4 +122,50 @@ describe('ApplicationDetailPage', () => {
       );
     });
   });
+
+  it('임시저장 신청서를 취소한다', async () => {
+    const draftResponse = {
+      ...applicationResponse,
+      status: 'DRAFT',
+      submittedAt: null,
+      attachments: []
+    };
+    const canceledResponse = {
+      ...draftResponse,
+      status: 'CANCELED',
+      completedAt: '2026-06-03T02:00:00Z'
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url === '/api/applications/100/cancel' && init?.method === 'POST') {
+        return new Response(JSON.stringify(canceledResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      if (url === '/api/applications/100') {
+        return new Response(JSON.stringify(draftResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      return new Response(null, { status: 404 });
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: '신청서 상세' });
+    await screen.findByText('임시저장');
+    screen.getByRole('button', { name: '신청 취소' }).click();
+
+    expect(await screen.findByText('취소')).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith('/api/applications/100/cancel', expect.objectContaining({
+      method: 'POST'
+    }));
+  });
 });

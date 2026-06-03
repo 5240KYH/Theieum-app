@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -286,6 +287,78 @@ class ApiAuthorizationTest {
     }
 
     @Test
+    void applicantCanUpdateOwnDraftOnly() throws Exception {
+        Application application = applicationService.createDraft(new ApplicationService.CreateDraftCommand(
+                3L,
+                1L,
+                LocalDate.of(2026, 6, 3),
+                LocalDate.of(2026, 6, 2),
+                "테스트 상점",
+                new BigDecimal("12500.00"),
+                "점심 식대"));
+        String applicantToken = login("employee01");
+        String otherApplicantToken = login("employee07");
+
+        mockMvc.perform(put("/api/applications/{id}", application.getId())
+                        .header("Authorization", bearer(otherApplicantToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "applicationDate": "2026-06-04",
+                                  "receiptDate": "2026-06-03",
+                                  "vendor": "수정 상점",
+                                  "amount": 22000,
+                                  "description": "수정된 식대"
+                                }
+                                """))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(put("/api/applications/{id}", application.getId())
+                        .header("Authorization", bearer(applicantToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "applicationDate": "2026-06-04",
+                                  "receiptDate": "2026-06-03",
+                                  "vendor": "수정 상점",
+                                  "amount": 22000,
+                                  "description": "수정된 식대"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.vendor").value("수정 상점"))
+                .andExpect(jsonPath("$.amount").value(22000))
+                .andExpect(jsonPath("$.description").value("수정된 식대"));
+
+        assertThat(applicationVendor(application.getId())).isEqualTo("수정 상점");
+    }
+
+    @Test
+    void applicantCanCancelOwnDraftOnly() throws Exception {
+        Application application = applicationService.createDraft(new ApplicationService.CreateDraftCommand(
+                3L,
+                1L,
+                LocalDate.of(2026, 6, 3),
+                LocalDate.of(2026, 6, 2),
+                "테스트 상점",
+                new BigDecimal("12500.00"),
+                "점심 식대"));
+        String applicantToken = login("employee01");
+        String otherApplicantToken = login("employee07");
+
+        mockMvc.perform(post("/api/applications/{id}/cancel", application.getId())
+                        .header("Authorization", bearer(otherApplicantToken)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/applications/{id}/cancel", application.getId())
+                        .header("Authorization", bearer(applicantToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CANCELED"));
+
+        assertThat(applicationStatus(application.getId())).isEqualTo("CANCELED");
+    }
+
+    @Test
     void receiptAttachmentRejectsOversizedImages() throws Exception {
         Application application = applicationService.createDraft(new ApplicationService.CreateDraftCommand(
                 3L,
@@ -393,6 +466,20 @@ class ApiAuthorizationTest {
         return jdbcTemplate.queryForObject(
                 "select count(*) from approval_line_steps",
                 Integer.class);
+    }
+
+    private String applicationVendor(long applicationId) {
+        return jdbcTemplate.queryForObject(
+                "select vendor from applications where id = ?",
+                String.class,
+                applicationId);
+    }
+
+    private String applicationStatus(long applicationId) {
+        return jdbcTemplate.queryForObject(
+                "select status from applications where id = ?",
+                String.class,
+                applicationId);
     }
 
     private long attachmentId(long applicationId) {

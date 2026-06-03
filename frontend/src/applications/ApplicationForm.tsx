@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { useAuth } from '../auth/AuthContext';
 import { ApiError } from '../shared/api';
-import { attachReceiptImage, createApplication, submitApplication } from './applicationApi';
+import { attachReceiptImage, createApplication, submitApplication, updateApplication } from './applicationApi';
 import { ApplicationResponse } from './applicationTypes';
 
 const MAX_RECEIPT_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -160,7 +160,9 @@ export function ApplicationForm() {
     const payloadSignature = JSON.stringify(payload);
     const saved = draft && draftPayloadSignature === payloadSignature
       ? draft
-      : await createApplication(payload);
+      : draft
+        ? await updateApplication(draft.id, payload)
+        : await createApplication(payload);
 
     setDraft(saved);
     setDraftPayloadSignature(payloadSignature);

@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -84,6 +85,25 @@ public class ApplicationController {
         return toResponse(application);
     }
 
+    @PutMapping("/{id}")
+    @Transactional
+    public ApplicationResponse update(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable long id,
+            @Valid @RequestBody CreateApplicationRequest request) {
+        requireRole(user, "APPLICANT");
+        Application application = applicationService.updateDraft(new ApplicationService.UpdateDraftCommand(
+                id,
+                user.id(),
+                request.approvalTypeId == null ? 1L : request.approvalTypeId,
+                request.applicationDate == null ? LocalDate.now() : request.applicationDate,
+                request.receiptDate,
+                request.vendor,
+                request.amount,
+                request.description));
+        return toResponse(application);
+    }
+
     @PostMapping("/{id}/attachments")
     @Transactional
     public AttachmentResponse attach(
@@ -133,6 +153,15 @@ public class ApplicationController {
             @PathVariable long id) {
         requireRole(user, "APPLICANT");
         return toResponse(applicationService.submit(id, user.id()));
+    }
+
+    @PostMapping("/{id}/cancel")
+    @Transactional
+    public ApplicationResponse cancel(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable long id) {
+        requireRole(user, "APPLICANT");
+        return toResponse(applicationService.cancelDraft(id, user.id()));
     }
 
     @GetMapping("/{id}")

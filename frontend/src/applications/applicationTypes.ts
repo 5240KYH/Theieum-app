@@ -1,4 +1,4 @@
-export type ApplicationStatus = 'DRAFT' | 'IN_APPROVAL' | 'APPROVED' | 'REJECTED' | string;
+export type ApplicationStatus = 'DRAFT' | 'IN_APPROVAL' | 'APPROVED' | 'REJECTED' | 'CANCELED' | string;
 export type ApprovalStepStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'ADMIN_APPROVED' | string;
 
 export interface UserSummary {
@@ -54,7 +54,8 @@ export function applicationStatusLabel(status: ApplicationStatus) {
     DRAFT: '임시저장',
     IN_APPROVAL: '결재중',
     APPROVED: '승인완료',
-    REJECTED: '반려'
+    REJECTED: '반려',
+    CANCELED: '취소'
   };
 
   return labels[status] ?? status;

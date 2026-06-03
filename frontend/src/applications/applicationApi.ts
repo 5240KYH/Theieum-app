@@ -8,6 +8,13 @@ export function createApplication(payload: CreateApplicationPayload) {
   });
 }
 
+export function updateApplication(applicationId: number, payload: CreateApplicationPayload) {
+  return api<ApplicationResponse>(`/applications/${applicationId}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
 export function attachReceiptImage(applicationId: number, file: File) {
   const formData = new FormData();
   formData.append('file', file);
@@ -20,6 +27,12 @@ export function attachReceiptImage(applicationId: number, file: File) {
 
 export function submitApplication(applicationId: number) {
   return api<ApplicationResponse>(`/applications/${applicationId}/submit`, {
+    method: 'POST'
+  });
+}
+
+export function cancelApplication(applicationId: number) {
+  return api<ApplicationResponse>(`/applications/${applicationId}/cancel`, {
     method: 'POST'
   });
 }

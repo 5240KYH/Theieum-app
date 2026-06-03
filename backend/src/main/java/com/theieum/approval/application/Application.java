@@ -98,6 +98,35 @@ public class Application {
         this.updatedAt = submittedAt;
     }
 
+    public void updateDraft(
+            ApprovalType approvalType,
+            LocalDate applicationDate,
+            LocalDate receiptDate,
+            String vendor,
+            BigDecimal amount,
+            String description,
+            Instant updatedAt) {
+        if (status != ApplicationStatus.DRAFT) {
+            throw new IllegalStateException("Only draft applications can be updated");
+        }
+        this.approvalType = approvalType;
+        this.applicationDate = applicationDate;
+        this.receiptDate = receiptDate;
+        this.vendor = vendor;
+        this.amount = amount;
+        this.description = description;
+        this.updatedAt = updatedAt;
+    }
+
+    public void cancelDraft(Instant canceledAt) {
+        if (status != ApplicationStatus.DRAFT) {
+            throw new IllegalStateException("Only draft applications can be canceled");
+        }
+        this.status = ApplicationStatus.CANCELED;
+        this.completedAt = canceledAt;
+        this.updatedAt = canceledAt;
+    }
+
     public void approve(Instant completedAt) {
         if (status != ApplicationStatus.IN_APPROVAL) {
             throw new IllegalStateException("Only in-approval applications can be approved");

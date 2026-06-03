@@ -1,9 +1,9 @@
-import { FileImage, RefreshCcw } from 'lucide-react';
+import { FileImage, RefreshCcw, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
 import { ApiError } from '../shared/api';
-import { getApplication, getAttachmentContent } from './applicationApi';
+import { cancelApplication, getApplication, getAttachmentContent } from './applicationApi';
 import {
   applicationStatusLabel,
   ApplicationResponse,
@@ -45,6 +45,20 @@ export function ApplicationDetailPage() {
     }
   }
 
+  async function handleCancelApplication() {
+    if (!application) {
+      return;
+    }
+
+    setError('');
+
+    try {
+      setApplication(await cancelApplication(application.id));
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+    }
+  }
+
   useEffect(() => {
     void loadApplication();
   }, [id]);
@@ -56,10 +70,18 @@ export function ApplicationDetailPage() {
           <p className="eyebrow">신청 업무</p>
           <h1 id="page-title">신청서 상세</h1>
         </div>
-        <button className="secondary-button" type="button" onClick={loadApplication}>
-          <RefreshCcw aria-hidden="true" size={16} />
-          새로고침
-        </button>
+        <div className="row-actions">
+          {application?.status === 'DRAFT' ? (
+            <button className="secondary-button danger-button" type="button" onClick={handleCancelApplication}>
+              <XCircle aria-hidden="true" size={16} />
+              신청 취소
+            </button>
+          ) : null}
+          <button className="secondary-button" type="button" onClick={loadApplication}>
+            <RefreshCcw aria-hidden="true" size={16} />
+            새로고침
+          </button>
+        </div>
       </div>
 
       {error ? <p className="form-error" role="alert">{error}</p> : null}

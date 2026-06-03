@@ -177,16 +177,14 @@ describe('ApplicationForm', () => {
     }));
   });
 
-  it('임시저장 후 내용을 수정해 제출하면 수정된 값으로 새 신청서를 제출한다', async () => {
+  it('임시저장 후 내용을 수정해 제출하면 같은 신청서를 갱신해 제출한다', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
 
       if (url === '/api/applications' && init?.method === 'POST') {
         const body = JSON.parse(String(init.body));
-        const id = body.vendor === '문구점' ? 100 : 101;
         return new Response(JSON.stringify({
           ...draftResponse,
-          id,
           vendor: body.vendor,
           amount: body.amount,
           description: body.description
@@ -196,7 +194,7 @@ describe('ApplicationForm', () => {
         });
       }
 
-      if (url === '/api/applications/100/attachments' || url === '/api/applications/101/attachments') {
+      if (url === '/api/applications/100/attachments') {
         return new Response(JSON.stringify({
           id: 501,
           originalFilename: 'receipt.png',
@@ -208,10 +206,23 @@ describe('ApplicationForm', () => {
         });
       }
 
-      if (url === '/api/applications/101/submit' && init?.method === 'POST') {
+      if (url === '/api/applications/100' && init?.method === 'PUT') {
+        const body = JSON.parse(String(init.body));
+        expect(body.vendor).toBe('카페');
+        return new Response(JSON.stringify({
+          ...draftResponse,
+          vendor: body.vendor,
+          amount: body.amount,
+          description: body.description
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      if (url === '/api/applications/100/submit' && init?.method === 'POST') {
         return new Response(JSON.stringify({
           ...submittedResponse,
-          id: 101,
           vendor: '카페',
           amount: 15000,
           description: '수정된 회의 다과'
@@ -221,10 +232,9 @@ describe('ApplicationForm', () => {
         });
       }
 
-      if (url === '/api/applications/101') {
+      if (url === '/api/applications/100') {
         return new Response(JSON.stringify({
           ...submittedResponse,
-          id: 101,
           vendor: '카페',
           amount: 15000,
           description: '수정된 회의 다과'
@@ -263,9 +273,12 @@ describe('ApplicationForm', () => {
     await userEvent.click(screen.getByRole('button', { name: '제출' }));
 
     await waitFor(() => {
-      expect(window.location.pathname).toBe('/applications/101');
+      expect(window.location.pathname).toBe('/applications/100');
     });
-    expect(fetchMock).toHaveBeenCalledWith('/api/applications/101/submit', expect.objectContaining({
+    expect(fetchMock).toHaveBeenCalledWith('/api/applications/100', expect.objectContaining({
+      method: 'PUT'
+    }));
+    expect(fetchMock).toHaveBeenCalledWith('/api/applications/100/submit', expect.objectContaining({
       method: 'POST'
     }));
   });
