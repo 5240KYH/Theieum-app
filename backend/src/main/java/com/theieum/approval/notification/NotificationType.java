@@ -1,5 +1,7 @@
 package com.theieum.approval.notification;
 
 public enum NotificationType {
-    APPROVAL_REQUESTED
+    APPROVAL_REQUESTED,
+    APPLICATION_APPROVED,
+    APPLICATION_REJECTED
 }

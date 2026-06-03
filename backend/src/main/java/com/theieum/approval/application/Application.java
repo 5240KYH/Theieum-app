@@ -98,6 +98,24 @@ public class Application {
         this.updatedAt = submittedAt;
     }
 
+    public void approve(Instant completedAt) {
+        if (status != ApplicationStatus.IN_APPROVAL) {
+            throw new IllegalStateException("Only in-approval applications can be approved");
+        }
+        this.status = ApplicationStatus.APPROVED;
+        this.completedAt = completedAt;
+        this.updatedAt = completedAt;
+    }
+
+    public void reject(Instant completedAt) {
+        if (status != ApplicationStatus.IN_APPROVAL) {
+            throw new IllegalStateException("Only in-approval applications can be rejected");
+        }
+        this.status = ApplicationStatus.REJECTED;
+        this.completedAt = completedAt;
+        this.updatedAt = completedAt;
+    }
+
     @PreUpdate
     void updateTimestamp() {
         this.updatedAt = Instant.now();

@@ -5,12 +5,14 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.theieum.approval.approval.ApprovalLineResolver;
 import com.theieum.approval.approval.ApprovalLineResolver.ResolvedApprover;
+import com.theieum.approval.approval.ApprovalStepStatus;
 import com.theieum.approval.approval.ApprovalType;
 import com.theieum.approval.attachment.Attachment;
 import com.theieum.approval.attachment.AttachmentRepository;
@@ -137,14 +139,143 @@ public class ApplicationService {
         return submitted;
     }
 
+    public Application approve(long stepId, long actorId, String comment) {
+        ApplicationApprovalStep step = findApprovalStep(stepId);
+        User actor = findActiveUser(actorId);
+        Instant actedAt = Instant.now();
+        validateApplicationInApproval(step.getApplication());
+        validateCurrentPendingStep(step);
+        if (!step.getOriginalApprover().getId().equals(actor.getId())) {
+            throw new IllegalStateException("Only the current approver can approve this step");
+        }
+
+        step.approve(actedAt);
+        entityManager.persist(new ApprovalHistory(
+                step.getApplication(),
+                step,
+                ApprovalStepStatus.APPROVED.name(),
+                step.getOriginalApprover(),
+                actor,
+                false,
+                null,
+                normalizeOptional(comment)));
+        advanceAfterApprovedStep(step.getApplication());
+        return step.getApplication();
+    }
+
+    public Application reject(long stepId, long actorId, String comment) {
+        String rejectionComment = requireText(comment, "Rejection comment is required");
+        ApplicationApprovalStep step = findApprovalStep(stepId);
+        User actor = findActiveUser(actorId);
+        Instant actedAt = Instant.now();
+        validateApplicationInApproval(step.getApplication());
+        validateCurrentPendingStep(step);
+        if (!step.getOriginalApprover().getId().equals(actor.getId())) {
+            throw new IllegalStateException("Only the current approver can reject this step");
+        }
+
+        step.reject(actedAt);
+        step.getApplication().reject(actedAt);
+        entityManager.persist(new ApprovalHistory(
+                step.getApplication(),
+                step,
+                ApprovalStepStatus.REJECTED.name(),
+                step.getOriginalApprover(),
+                actor,
+                false,
+                null,
+                rejectionComment));
+        notificationEventService.createApplicationRejected(step.getApplication());
+        return step.getApplication();
+    }
+
+    public Application adminApprove(long stepId, long adminId, String reason) {
+        String adminReason = requireText(reason, "Admin approval reason is required");
+        ApplicationApprovalStep step = findApprovalStep(stepId);
+        User admin = findActiveUser(adminId);
+        Instant actedAt = Instant.now();
+        if (!admin.getRoleList().contains("ADMIN")) {
+            throw new IllegalStateException("Only admins can perform admin approval");
+        }
+        validateApplicationInApproval(step.getApplication());
+        validateCurrentPendingStep(step);
+
+        step.adminApprove(actedAt);
+        entityManager.persist(new ApprovalHistory(
+                step.getApplication(),
+                step,
+                ApprovalStepStatus.ADMIN_APPROVED.name(),
+                step.getOriginalApprover(),
+                admin,
+                true,
+                adminReason,
+                null));
+        advanceAfterApprovedStep(step.getApplication());
+        return step.getApplication();
+    }
+
     private Application findApplication(long applicationId) {
         return applicationRepository.findById(applicationId)
                 .orElseThrow(() -> new IllegalStateException("Application not found: " + applicationId));
     }
 
+    private ApplicationApprovalStep findApprovalStep(long stepId) {
+        return approvalStepRepository.findById(stepId)
+                .orElseThrow(() -> new IllegalStateException("Approval step not found: " + stepId));
+    }
+
     private User findActiveUser(long userId) {
         return userRepository.findByIdAndActiveTrue(userId)
                 .orElseThrow(() -> new IllegalStateException("Active user not found: " + userId));
+    }
+
+    private void validateApplicationInApproval(Application application) {
+        if (application.getStatus() != ApplicationStatus.IN_APPROVAL) {
+            throw new IllegalStateException("Only in-approval applications can be approved");
+        }
+    }
+
+    private void validateCurrentPendingStep(ApplicationApprovalStep step) {
+        if (step.getStatus() != ApprovalStepStatus.PENDING) {
+            throw new IllegalStateException("Only pending approval steps can be processed");
+        }
+        ApplicationApprovalStep currentStep = approvalStepRepository
+                .findByApplicationIdOrderByStepOrderAsc(step.getApplication().getId())
+                .stream()
+                .filter(candidate -> candidate.getStatus() == ApprovalStepStatus.PENDING)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("No pending approval step exists"));
+        if (!Objects.equals(currentStep.getId(), step.getId())) {
+            throw new IllegalStateException("Only the current approval step can be processed");
+        }
+    }
+
+    private void advanceAfterApprovedStep(Application application) {
+        approvalStepRepository.findByApplicationIdOrderByStepOrderAsc(application.getId())
+                .stream()
+                .filter(step -> step.getStatus() == ApprovalStepStatus.PENDING)
+                .findFirst()
+                .ifPresentOrElse(
+                        nextStep -> notificationEventService.createApprovalRequested(application, nextStep.getOriginalApprover()),
+                        () -> {
+                            application.approve(Instant.now());
+                            notificationEventService.createApplicationApproved(application);
+                        });
+    }
+
+    private String requireText(String value, String message) {
+        String normalized = normalizeOptional(value);
+        if (normalized == null) {
+            throw new IllegalArgumentException(message);
+        }
+        return normalized;
+    }
+
+    private String normalizeOptional(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
     }
 
     private boolean matchesImageSignature(String contentType, byte[] bytes) {

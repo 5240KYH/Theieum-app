@@ -53,6 +53,30 @@ public class ApplicationApprovalStep {
         this.status = ApprovalStepStatus.PENDING;
     }
 
+    public void approve(Instant actedAt) {
+        requirePending();
+        this.status = ApprovalStepStatus.APPROVED;
+        this.actedAt = actedAt;
+    }
+
+    public void reject(Instant actedAt) {
+        requirePending();
+        this.status = ApprovalStepStatus.REJECTED;
+        this.actedAt = actedAt;
+    }
+
+    public void adminApprove(Instant actedAt) {
+        requirePending();
+        this.status = ApprovalStepStatus.ADMIN_APPROVED;
+        this.actedAt = actedAt;
+    }
+
+    private void requirePending() {
+        if (status != ApprovalStepStatus.PENDING) {
+            throw new IllegalStateException("Only pending approval steps can be processed");
+        }
+    }
+
     public Long getId() {
         return id;
     }

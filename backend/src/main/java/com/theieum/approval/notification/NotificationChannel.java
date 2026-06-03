@@ -1,5 +1,7 @@
 package com.theieum.approval.notification;
 
 public enum NotificationChannel {
-    IN_APP
+    IN_APP,
+    EMAIL,
+    KAKAO
 }

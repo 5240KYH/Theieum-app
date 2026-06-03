@@ -55,6 +55,25 @@ public class ApprovalHistory {
     protected ApprovalHistory() {
     }
 
+    public ApprovalHistory(
+            Application application,
+            ApplicationApprovalStep approvalStep,
+            String action,
+            User originalApprover,
+            User actor,
+            boolean adminOverride,
+            String adminReason,
+            String comment) {
+        this.application = application;
+        this.approvalStep = approvalStep;
+        this.action = action;
+        this.originalApprover = originalApprover;
+        this.actor = actor;
+        this.adminOverride = adminOverride;
+        this.adminReason = adminReason;
+        this.comment = comment;
+    }
+
     public Long getId() {
         return id;
     }

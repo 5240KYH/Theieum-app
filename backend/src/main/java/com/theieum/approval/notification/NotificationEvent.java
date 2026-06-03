@@ -73,9 +73,18 @@ public class NotificationEvent {
     }
 
     public NotificationEvent(User recipient, Application application, String title, String body) {
+        this(recipient, application, NotificationType.APPROVAL_REQUESTED, title, body);
+    }
+
+    public NotificationEvent(
+            User recipient,
+            Application application,
+            NotificationType notificationType,
+            String title,
+            String body) {
         this.recipient = recipient;
         this.application = application;
-        this.notificationType = NotificationType.APPROVAL_REQUESTED;
+        this.notificationType = notificationType;
         this.channel = NotificationChannel.IN_APP;
         this.title = title;
         this.body = body;
