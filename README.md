@@ -27,7 +27,7 @@ SPRING_PROFILES_ACTIVE=local JWT_SECRET=change-this-local-secret ./gradlew bootR
 docker compose up --build
 ```
 
-접속 주소는 다음과 같습니다.
+브라우저에서 `http://localhost:3000`으로 접속합니다. 접속 주소는 다음과 같습니다.
 
 - 프론트엔드: `http://localhost:3000`
 - 백엔드 API: `http://localhost:8080/api`
@@ -35,13 +35,22 @@ docker compose up --build
 
 Docker Compose 실행은 MVP 확인을 위해 `local` profile을 사용하므로 seed 계정이 함께 생성됩니다.
 
+## 기본 계정
+
+모든 seed 계정의 비밀번호는 `password`입니다.
+
 | 역할 | 아이디 | 비밀번호 |
 | --- | --- | --- |
 | 관리자 | `admin` | `password` |
-| 기안자/결재자 | `employee01` | `password` |
+| 기안자 | `employee01` | `password` |
+| 개발팀 결재자 | `lead-dev` | `password` |
 | 결재자 | `approver01` | `password` |
 
+기본 E2E 흐름은 개발팀 기안자인 `employee01`이 신청하고, 개발팀 예외 결재선에 따라 `lead-dev`가 승인합니다. `approver01`은 기본 결재선 검증용 결재자 계정입니다.
+
 운영 배포 전에는 `docker-compose.yml`의 `JWT_SECRET`, DB 비밀번호, 파일 저장 경로를 환경별 secret으로 교체해야 합니다. `JWT_SECRET`은 애플리케이션이 금지하는 공유 기본값과 달라야 하며, 충분히 긴 난수 문자열을 사용하세요. 현재 frontend 컨테이너는 nginx가 `/api/*` 요청을 backend 컨테이너로 프록시합니다.
+
+현재 Compose 구성은 로컬 MVP 검증용입니다. 운영 배포에서는 `local` profile과 seed 데이터 적용을 끄고, 운영용 secret 주입 방식과 파일 저장소를 별도 구성하세요.
 
 기존 개발 DB 볼륨에 이전 seed 마이그레이션이 적용되어 있었다면 백엔드 시작 시 Flyway checksum 오류가 날 수 있습니다. 이 경우 개발 DB를 보존해야 하는지 먼저 판단한 뒤, 새 MVP 데이터를 다시 넣어도 되는 로컬 환경에서는 다음 명령으로 볼륨을 초기화하세요.
 
