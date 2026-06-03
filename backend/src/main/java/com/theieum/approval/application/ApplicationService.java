@@ -106,11 +106,14 @@ public class ApplicationService {
         List<ResolvedApprover> approvers = approvalLineResolver.resolve(
                 application.getApprovalType().getId(),
                 application.getApplicant().getId());
-        List<ApplicationApprovalStep> approvalSteps = approvers.stream()
-                .map(approver -> new ApplicationApprovalStep(
+        List<ApplicationApprovalStep> approvalSteps = java.util.stream.IntStream.range(0, approvers.size())
+                .mapToObj(index -> {
+                    ResolvedApprover approver = approvers.get(index);
+                    return new ApplicationApprovalStep(
                         application,
-                        approver.stepOrder(),
-                        entityManager.getReference(User.class, approver.userId())))
+                            index + 1,
+                            entityManager.getReference(User.class, approver.userId()));
+                })
                 .toList();
         approvalStepRepository.saveAll(approvalSteps);
 
