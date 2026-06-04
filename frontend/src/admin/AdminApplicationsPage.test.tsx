@@ -44,6 +44,13 @@ const adminApplications = [
     applicantName: '직원03',
     status: 'APPROVED',
     vendor: '카페'
+  },
+  {
+    id: 12,
+    applicantId: 6,
+    applicantName: '직원04',
+    status: 'DRAFT',
+    vendor: '택시'
   }
 ];
 
@@ -172,6 +179,43 @@ describe('AdminApplicationsPage', () => {
       }));
     });
     expect(await screen.findByRole('status')).toHaveTextContent('관리자 예외 결재가 완료되었습니다.');
+  });
+
+  it('관리자는 임시저장 신청서를 확인 후 완전 삭제할 수 있다', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url === '/api/admin/applications/12/hard-delete' && init?.method === 'DELETE') {
+        return new Response(null, { status: 204 });
+      }
+
+      if (url === '/api/admin/applications') {
+        return new Response(JSON.stringify(adminApplications), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      return new Response(null, { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    const row = await screen.findByRole('row', { name: /택시/ });
+    await userEvent.click(within(row).getByRole('button', { name: '완전 삭제' }));
+
+    const dialog = screen.getByRole('dialog', { name: '신청서 완전 삭제' });
+    expect(dialog).toHaveTextContent('#12');
+    await userEvent.click(within(dialog).getByRole('button', { name: '완전 삭제' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith('/api/admin/applications/12/hard-delete', expect.objectContaining({
+        method: 'DELETE'
+      }));
+    });
+    expect(await screen.findByRole('status')).toHaveTextContent('신청서가 완전 삭제되었습니다.');
+    expect(screen.queryByText('택시')).not.toBeInTheDocument();
   });
 
   it('알림 로그에서 채널과 발송 상태를 표시한다', async () => {

@@ -37,6 +37,12 @@ export function cancelApplication(applicationId: number) {
   });
 }
 
+export function hardDeleteApplication(applicationId: number) {
+  return api<void>(`/applications/${applicationId}/hard-delete`, {
+    method: 'DELETE'
+  });
+}
+
 export function getMyApplications() {
   return api<ApplicationResponse[]>('/applications/my');
 }

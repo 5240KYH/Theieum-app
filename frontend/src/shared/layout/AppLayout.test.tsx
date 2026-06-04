@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { App } from '../../app/App';
@@ -115,6 +115,45 @@ describe('AppLayout', () => {
     expect(screen.getByRole('link', { name: /조직 관리/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /전체 신청서/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /알림 로그/ })).toBeInTheDocument();
+  });
+
+  it('모바일 하단 탭에서 핵심 업무 메뉴를 제공한다', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify([]), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    })));
+
+    render(<App />);
+
+    const mobileNav = await screen.findByRole('navigation', { name: '모바일 주요 메뉴' });
+    expect(within(mobileNav).getByRole('link', { name: /대시보드/ })).toBeInTheDocument();
+    expect(within(mobileNav).getByRole('link', { name: /캘린더/ })).toBeInTheDocument();
+    expect(within(mobileNav).getByRole('link', { name: /새 신청/ })).toBeInTheDocument();
+    expect(within(mobileNav).getByRole('link', { name: /내 신청서/ })).toBeInTheDocument();
+    expect(within(mobileNav).getByRole('link', { name: /결재함/ })).toBeInTheDocument();
+    expect(within(mobileNav).getByRole('button', { name: '더보기 메뉴 열기' })).toBeInTheDocument();
+  });
+
+  it('매니저는 모바일 더보기에서 관리 메뉴를 연다', async () => {
+    localStorage.setItem('authUser', JSON.stringify({
+      id: 10,
+      loginId: 'manager01',
+      name: '매니저01',
+      roles: ['MANAGER', 'APPLICANT']
+    }));
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify([]), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    })));
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('button', { name: '더보기 메뉴 열기' }));
+
+    const morePanel = screen.getByRole('dialog', { name: '모바일 더보기 메뉴' });
+    expect(morePanel).toBeInTheDocument();
+    expect(within(morePanel).getByRole('link', { name: /사용자 관리/ })).toBeInTheDocument();
+    expect(within(morePanel).getByRole('link', { name: /결재선 관리/ })).toBeInTheDocument();
   });
 
   it('로그인 사용자가 본인 비밀번호를 팝업에서 변경한다', async () => {

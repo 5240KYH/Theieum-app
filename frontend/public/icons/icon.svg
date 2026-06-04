@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">더이음 결재</title>
+  <rect width="512" height="512" rx="96" fill="#2159c6"/>
+  <path d="M140 132h232c22 0 40 18 40 40v168c0 22-18 40-40 40H140c-22 0-40-18-40-40V172c0-22 18-40 40-40Z" fill="#ffffff"/>
+  <path d="M152 190h208" stroke="#2159c6" stroke-width="28" stroke-linecap="round"/>
+  <path d="M152 256h132" stroke="#2159c6" stroke-width="28" stroke-linecap="round"/>
+  <path d="M152 322h92" stroke="#2159c6" stroke-width="28" stroke-linecap="round"/>
+  <path d="m318 316 34 34 72-86" fill="none" stroke="#17a56b" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

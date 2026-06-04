@@ -461,6 +461,141 @@ class ApiAuthorizationTest {
     }
 
     @Test
+    void allLoggedInUsersCanListCalendarEvents() throws Exception {
+        String applicantToken = login("employee01");
+
+        mockMvc.perform(get("/api/calendar/events")
+                        .header("Authorization", bearer(applicantToken))
+                        .param("from", "2026-06-01T00:00:00+09:00")
+                        .param("to", "2026-07-01T00:00:00+09:00"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void applicantCannotManageCalendarEvents() throws Exception {
+        String applicantToken = login("employee01");
+
+        mockMvc.perform(post("/api/calendar/events")
+                        .header("Authorization", bearer(applicantToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(calendarEventJson()))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void managerCanCreateUpdateAndDeleteCalendarEvent() throws Exception {
+        createRoleTestUser("calendar-manager", "MANAGER,APPLICANT");
+        String managerToken = login("calendar-manager");
+
+        String response = mockMvc.perform(post("/api/calendar/events")
+                        .header("Authorization", bearer(managerToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(calendarEventJson()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.title").value("월간 마감"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        long eventId = objectMapper.readTree(response).path("id").asLong();
+
+        mockMvc.perform(put("/api/calendar/events/{id}", eventId)
+                        .header("Authorization", bearer(managerToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "수정된 일정",
+                                  "description": "설명 수정",
+                                  "location": "회의실 A",
+                                  "startAt": "2026-06-11T09:00:00+09:00",
+                                  "endAt": "2026-06-11T10:00:00+09:00",
+                                  "allDay": false
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("수정된 일정"));
+
+        mockMvc.perform(delete("/api/calendar/events/{id}", eventId)
+                        .header("Authorization", bearer(managerToken)))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void adminReferenceHardDeleteEndpointsRequireAdmin() throws Exception {
+        long managerId = createRoleTestUser("hard-delete-manager", "MANAGER,APPLICANT");
+        String managerToken = login("hard-delete-manager");
+
+        mockMvc.perform(delete("/api/admin/users/{id}/hard-delete", managerId)
+                        .header("Authorization", bearer(managerToken)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(delete("/api/admin/organizations/{id}/hard-delete", 3L)
+                        .header("Authorization", bearer(managerToken)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(delete("/api/admin/positions/{id}/hard-delete", 1L)
+                        .header("Authorization", bearer(managerToken)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(delete("/api/admin/approval-lines/{id}/hard-delete", 1L)
+                        .header("Authorization", bearer(managerToken)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(delete("/api/admin/approval-org-exceptions/{id}/hard-delete", 1L)
+                        .header("Authorization", bearer(managerToken)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void adminCanHardDeleteUnusedAdminReferences() throws Exception {
+        String adminToken = login("admin");
+        long userId = createRoleTestUser("hard-delete-user", "APPLICANT");
+        long organizationId = jdbcTemplate.queryForObject("""
+                insert into organizations (name, parent_id, level_no, sort_order, active)
+                values ('완전 삭제 조직', null, 1, 901, true)
+                returning id
+                """, Long.class);
+        long positionId = jdbcTemplate.queryForObject("""
+                insert into positions (name, rank_order, sort_order, active)
+                values ('완전 삭제 직위', 901, 901, true)
+                returning id
+                """, Long.class);
+        long approvalLineId = jdbcTemplate.queryForObject("""
+                insert into approval_lines (approval_type_id, name, active)
+                values (1, '완전 삭제 결재선', true)
+                returning id
+                """, Long.class);
+        jdbcTemplate.update("""
+                insert into approval_line_steps (
+                    approval_line_id, step_order, step_type, direct_user_id, sort_policy
+                ) values (?, 1, 'DIRECT_USER', 2, 'POSITION_ORDER')
+                """, approvalLineId);
+        long exceptionId = jdbcTemplate.queryForObject("""
+                insert into approval_org_exceptions (
+                    approval_type_id, organization_id, approver_user_id, step_order, active
+                ) values (1, 4, 19, 1, true)
+                returning id
+                """, Long.class);
+
+        mockMvc.perform(delete("/api/admin/users/{id}/hard-delete", userId)
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(delete("/api/admin/organizations/{id}/hard-delete", organizationId)
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(delete("/api/admin/positions/{id}/hard-delete", positionId)
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(delete("/api/admin/approval-lines/{id}/hard-delete", approvalLineId)
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(delete("/api/admin/approval-org-exceptions/{id}/hard-delete", exceptionId)
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isNoContent());
+
+        assertThat(rowCount("users", userId)).isZero();
+        assertThat(rowCount("organizations", organizationId)).isZero();
+        assertThat(rowCount("positions", positionId)).isZero();
+        assertThat(rowCount("approval_lines", approvalLineId)).isZero();
+        assertThat(rowCount("approval_org_exceptions", exceptionId)).isZero();
+    }
+
+    @Test
     void adminCanChangeManagedUserPassword() throws Exception {
         long managedUserId = createPasswordTestUser("password-admin-target");
         String adminToken = login("admin");
@@ -652,8 +787,8 @@ class ApiAuthorizationTest {
                         .param("approvalTypeId", "1")
                         .header("Authorization", bearer(applicantToken)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].stepOrder").value(1))
-                .andExpect(jsonPath("$[0].approver.name").isNotEmpty());
+                .andExpect(jsonPath("$[0].stepOrder").value(2))
+                .andExpect(jsonPath("$[0].approver.name").value("개발팀장"));
     }
 
     @Test
@@ -679,6 +814,60 @@ class ApiAuthorizationTest {
                 .andExpect(jsonPath("$.status").value("CANCELED"));
 
         assertThat(applicationStatus(application.getId())).isEqualTo("CANCELED");
+    }
+
+    @Test
+    void applicantCanHardDeleteOwnDraftApplication() throws Exception {
+        Application application = applicationService.createDraft(new ApplicationService.CreateDraftCommand(
+                3L,
+                1L,
+                LocalDate.of(2026, 6, 3),
+                LocalDate.of(2026, 6, 2),
+                "삭제 대상 상점",
+                new BigDecimal("12500.00"),
+                "삭제 대상 식대"));
+        String applicantToken = login("employee01");
+
+        mockMvc.perform(delete("/api/applications/{id}/hard-delete", application.getId())
+                        .header("Authorization", bearer(applicantToken)))
+                .andExpect(status().isNoContent());
+
+        assertThat(rowCount("applications", application.getId())).isZero();
+    }
+
+    @Test
+    void adminCanHardDeleteCanceledApplicationButManagerCannot() throws Exception {
+        Application managerTarget = applicationService.createDraft(new ApplicationService.CreateDraftCommand(
+                3L,
+                1L,
+                LocalDate.of(2026, 6, 3),
+                LocalDate.of(2026, 6, 2),
+                "매니저 차단 상점",
+                new BigDecimal("12500.00"),
+                "매니저 차단 식대"));
+        Application adminTarget = applicationService.createDraft(new ApplicationService.CreateDraftCommand(
+                3L,
+                1L,
+                LocalDate.of(2026, 6, 4),
+                LocalDate.of(2026, 6, 3),
+                "관리자 삭제 상점",
+                new BigDecimal("22000.00"),
+                "관리자 삭제 식대"));
+        applicationService.cancelDraft(adminTarget.getId(), 3L);
+        createRoleTestUser("application-hard-delete-manager", "MANAGER,APPLICANT");
+        String managerToken = login("application-hard-delete-manager");
+        String adminToken = login("admin");
+
+        mockMvc.perform(delete("/api/admin/applications/{id}/hard-delete", managerTarget.getId())
+                        .header("Authorization", bearer(managerToken)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(delete("/api/admin/applications/{id}/hard-delete", adminTarget.getId())
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isNoContent());
+
+        assertThat(rowCount("applications", managerTarget.getId())).isOne();
+        assertThat(rowCount("applications", adminTarget.getId())).isZero();
     }
 
     @Test
@@ -752,6 +941,19 @@ class ApiAuthorizationTest {
         return "Bearer " + accessToken;
     }
 
+    private String calendarEventJson() {
+        return """
+                {
+                  "title": "월간 마감",
+                  "description": "영수증 제출 마감",
+                  "location": "본사",
+                  "startAt": "2026-06-10T09:00:00+09:00",
+                  "endAt": "2026-06-10T10:00:00+09:00",
+                  "allDay": false
+                }
+                """;
+    }
+
     private long stepId(long applicationId, int stepOrder) {
         return jdbcTemplate.queryForObject(
                 """
@@ -819,6 +1021,13 @@ class ApiAuthorizationTest {
         return jdbcTemplate.queryForObject(
                 "select active from " + tableName + " where id = ?",
                 Boolean.class,
+                id);
+    }
+
+    private int rowCount(String tableName, long id) {
+        return jdbcTemplate.queryForObject(
+                "select count(*) from " + tableName + " where id = ?",
+                Integer.class,
                 id);
     }
 

@@ -1,9 +1,10 @@
 import { ChangeEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { ShieldCheck, X } from 'lucide-react';
+import { ShieldCheck, Trash2, X } from 'lucide-react';
 
+import { useAuth } from '../auth/AuthContext';
 import { applicationStatusLabel, ApprovalStepResponse } from '../applications/applicationTypes';
 import { ApiError } from '../shared/api';
-import { adminApproveStep, getAdminApplications, getApplication } from './adminApi';
+import { adminApproveStep, getAdminApplications, getApplication, hardDeleteAdminApplication } from './adminApi';
 import { AdminApplication, findPendingStep } from './adminTypes';
 
 const statusOptions = [
@@ -11,7 +12,8 @@ const statusOptions = [
   { value: 'DRAFT', label: '임시저장' },
   { value: 'IN_APPROVAL', label: '결재중' },
   { value: 'APPROVED', label: '승인완료' },
-  { value: 'REJECTED', label: '반려' }
+  { value: 'REJECTED', label: '반려' },
+  { value: 'CANCELED', label: '취소' }
 ];
 
 function errorMessage(error: unknown) {
@@ -23,13 +25,17 @@ function errorMessage(error: unknown) {
 }
 
 export function AdminApplicationsPage() {
+  const auth = useAuth();
   const [applications, setApplications] = useState<AdminApplication[]>([]);
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [selectedApplication, setSelectedApplication] = useState<AdminApplication | null>(null);
+  const [hardDeleteTarget, setHardDeleteTarget] = useState<AdminApplication | null>(null);
   const [pendingStep, setPendingStep] = useState<ApprovalStepResponse | null>(null);
   const [reason, setReason] = useState('');
   const [isLoading, setLoading] = useState(true);
   const [isApproving, setApproving] = useState(false);
+  const [isDeleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const lastOverrideButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -156,6 +162,32 @@ export function AdminApplicationsPage() {
     }
   }
 
+  function canHardDelete(application: AdminApplication) {
+    return auth.hasRole('ADMIN') && (application.status === 'DRAFT' || application.status === 'CANCELED');
+  }
+
+  async function handleHardDeleteApplication() {
+    if (!hardDeleteTarget) {
+      return;
+    }
+
+    setDeleting(true);
+    setDeleteError('');
+    setError('');
+    setMessage('');
+
+    try {
+      await hardDeleteAdminApplication(hardDeleteTarget.id);
+      setApplications((current) => current.filter((application) => application.id !== hardDeleteTarget.id));
+      setHardDeleteTarget(null);
+      setMessage('신청서가 완전 삭제되었습니다.');
+    } catch (requestError) {
+      setDeleteError(errorMessage(requestError));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <section className="page-section" aria-labelledby="page-title">
       <div className="page-header">
@@ -190,6 +222,7 @@ export function AdminApplicationsPage() {
                 <th>사용처</th>
                 <th>상태</th>
                 <th>관리자 예외</th>
+                <th>완전 삭제</th>
               </tr>
             </thead>
             <tbody>
@@ -210,11 +243,30 @@ export function AdminApplicationsPage() {
                       예외 결재
                     </button>
                   </td>
+                  <td>
+                    {canHardDelete(application) ? (
+                      <button
+                        className="secondary-button hard-delete-button"
+                        type="button"
+                        onClick={() => {
+                          setHardDeleteTarget(application);
+                          setDeleteError('');
+                          setMessage('');
+                          setError('');
+                        }}
+                      >
+                        <Trash2 aria-hidden="true" size={16} />
+                        완전 삭제
+                      </button>
+                    ) : (
+                      <span className="muted-copy">-</span>
+                    )}
+                  </td>
                 </tr>
               ))}
               {!isLoading && filteredApplications.length === 0 ? (
                 <tr>
-                  <td colSpan={5}>조회된 신청서가 없습니다.</td>
+                  <td colSpan={6}>조회된 신청서가 없습니다.</td>
                 </tr>
               ) : null}
             </tbody>
@@ -262,6 +314,60 @@ export function AdminApplicationsPage() {
                 </button>
                 <button className="primary-button" type="button" disabled={isApproving || !pendingStep} onClick={() => void handleAdminApprove()}>
                   예외 승인
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {hardDeleteTarget ? (
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="admin-application-hard-delete-title"
+        >
+          <div className="preview-modal compact-modal danger-modal">
+            <div className="table-toolbar borderless-panel">
+              <strong id="admin-application-hard-delete-title">신청서 완전 삭제</strong>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="닫기"
+                onClick={() => {
+                  if (!isDeleting) {
+                    setHardDeleteTarget(null);
+                    setDeleteError('');
+                  }
+                }}
+              >
+                <X aria-hidden="true" size={18} />
+              </button>
+            </div>
+            <div className="form-panel borderless-panel">
+              <p className="danger-copy">이 신청서와 첨부파일은 복구할 수 없습니다.</p>
+              <dl className="definition-grid compact-definition">
+                <div>
+                  <dt>신청서</dt>
+                  <dd>#{hardDeleteTarget.id}</dd>
+                </div>
+                <div>
+                  <dt>신청자</dt>
+                  <dd>{hardDeleteTarget.applicantName}</dd>
+                </div>
+                <div>
+                  <dt>상태</dt>
+                  <dd>{applicationStatusLabel(hardDeleteTarget.status)}</dd>
+                </div>
+              </dl>
+              {deleteError ? <p className="form-error" role="alert">{deleteError}</p> : null}
+              <div className="form-actions">
+                <button className="secondary-button" type="button" disabled={isDeleting} onClick={() => setHardDeleteTarget(null)}>
+                  취소
+                </button>
+                <button className="primary-button hard-delete-confirm-button" type="button" disabled={isDeleting} onClick={() => void handleHardDeleteApplication()}>
+                  완전 삭제
                 </button>
               </div>
             </div>

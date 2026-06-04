@@ -49,6 +49,10 @@ export function deleteAdminUser(id: number) {
   return api<void>(`/admin/users/${id}`, { method: 'DELETE' });
 }
 
+export function hardDeleteAdminUser(id: number) {
+  return api<void>(`/admin/users/${id}/hard-delete`, { method: 'DELETE' });
+}
+
 export function updateAdminUserPassword(id: number, newPassword: string) {
   return api<void>(`/admin/users/${id}/password`, {
     method: 'PUT',
@@ -78,6 +82,10 @@ export function deleteAdminOrganization(id: number) {
   return api<void>(`/admin/organizations/${id}`, { method: 'DELETE' });
 }
 
+export function hardDeleteAdminOrganization(id: number) {
+  return api<void>(`/admin/organizations/${id}/hard-delete`, { method: 'DELETE' });
+}
+
 export function getAdminPositions() {
   return api<AdminPosition[]>('/admin/positions');
 }
@@ -98,6 +106,10 @@ export function updateAdminPosition(id: number, payload: unknown) {
 
 export function deleteAdminPosition(id: number) {
   return api<void>(`/admin/positions/${id}`, { method: 'DELETE' });
+}
+
+export function hardDeleteAdminPosition(id: number) {
+  return api<void>(`/admin/positions/${id}/hard-delete`, { method: 'DELETE' });
 }
 
 export function getAdminApprovalTypes() {
@@ -126,6 +138,10 @@ export function deleteAdminApprovalLine(id: number) {
   return api<void>(`/admin/approval-lines/${id}`, { method: 'DELETE' });
 }
 
+export function hardDeleteAdminApprovalLine(id: number) {
+  return api<void>(`/admin/approval-lines/${id}/hard-delete`, { method: 'DELETE' });
+}
+
 export function getAdminApprovalOrgExceptions() {
   return api<AdminApprovalOrgException[]>('/admin/approval-org-exceptions');
 }
@@ -146,6 +162,14 @@ export function updateAdminApprovalOrgException(id: number, payload: unknown) {
 
 export function deleteAdminApprovalOrgException(id: number) {
   return api<void>(`/admin/approval-org-exceptions/${id}`, { method: 'DELETE' });
+}
+
+export function hardDeleteAdminApprovalOrgException(id: number) {
+  return api<void>(`/admin/approval-org-exceptions/${id}/hard-delete`, { method: 'DELETE' });
+}
+
+export function hardDeleteAdminApplication(id: number) {
+  return api<void>(`/admin/applications/${id}/hard-delete`, { method: 'DELETE' });
 }
 
 export { getApplication };

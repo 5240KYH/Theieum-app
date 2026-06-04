@@ -150,6 +150,18 @@ describe('ApplicationForm', () => {
     expect(attachmentLabel).toHaveTextContent('영수증 이미지 첨부 *');
   });
 
+  it('모바일에서 첨부 영역과 제출 액션을 고정형 구조로 제공한다', () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify([]), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    })));
+
+    render(<App />);
+
+    expect(screen.getByLabelText('영수증 이미지 첨부').closest('.mobile-attachment-uploader')).not.toBeNull();
+    expect(screen.getByRole('button', { name: '제출' }).closest('.mobile-sticky-actions')).not.toBeNull();
+  });
+
   it('이미지 첨부 후 썸네일과 삭제 버튼을 표시한다', async () => {
     vi.stubGlobal('fetch', vi.fn());
     render(<App />);

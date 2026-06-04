@@ -396,7 +396,7 @@ export function ApplicationForm() {
           />
         </label>
 
-        <div className="attachment-field">
+        <div className="attachment-field mobile-attachment-uploader">
           <label className="required-inline-label" htmlFor="receipt-image">영수증 이미지 첨부 <RequiredMark /></label>
           <input
             aria-label="영수증 이미지 첨부"
@@ -447,7 +447,7 @@ export function ApplicationForm() {
         {error ? <p className="form-error" role="alert">{error}</p> : null}
         {message ? <p className="form-success" role="status">{message}</p> : null}
 
-        <div className="form-actions">
+        <div className="form-actions mobile-sticky-actions">
           <button className="secondary-button" disabled={isSaving} type="button" onClick={handleSaveDraft}>
             <Save aria-hidden="true" size={16} />
             임시저장

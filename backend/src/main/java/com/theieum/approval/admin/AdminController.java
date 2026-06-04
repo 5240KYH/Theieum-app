@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.theieum.approval.application.Application;
+import com.theieum.approval.application.ApplicationHardDeleteService;
 import com.theieum.approval.application.ApplicationRepository;
 import com.theieum.approval.application.ApplicationService;
 import com.theieum.approval.approval.ApprovalStepType;
@@ -47,18 +48,24 @@ public class AdminController {
     private final ApplicationService applicationService;
     private final ApplicationRepository applicationRepository;
     private final NotificationEventRepository notificationEventRepository;
+    private final AdminHardDeleteService adminHardDeleteService;
+    private final ApplicationHardDeleteService applicationHardDeleteService;
 
     public AdminController(
             JdbcTemplate jdbcTemplate,
             PasswordEncoder passwordEncoder,
             ApplicationService applicationService,
             ApplicationRepository applicationRepository,
-            NotificationEventRepository notificationEventRepository) {
+            NotificationEventRepository notificationEventRepository,
+            AdminHardDeleteService adminHardDeleteService,
+            ApplicationHardDeleteService applicationHardDeleteService) {
         this.jdbcTemplate = jdbcTemplate;
         this.passwordEncoder = passwordEncoder;
         this.applicationService = applicationService;
         this.applicationRepository = applicationRepository;
         this.notificationEventRepository = notificationEventRepository;
+        this.adminHardDeleteService = adminHardDeleteService;
+        this.applicationHardDeleteService = applicationHardDeleteService;
     }
 
     @GetMapping("/users")
@@ -178,6 +185,15 @@ public class AdminController {
         return ResponseEntity.noContent().build();
     }
 
+    @DeleteMapping("/users/{id}/hard-delete")
+    public ResponseEntity<Void> hardDeleteUser(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable long id) {
+        requireAdmin(user);
+        adminHardDeleteService.hardDeleteUser(id);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/organizations")
     @Transactional(readOnly = true)
     public List<Map<String, Object>> organizations(@AuthenticationPrincipal AuthenticatedUser user) {
@@ -258,6 +274,15 @@ public class AdminController {
         return ResponseEntity.noContent().build();
     }
 
+    @DeleteMapping("/organizations/{id}/hard-delete")
+    public ResponseEntity<Void> hardDeleteOrganization(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable long id) {
+        requireAdmin(user);
+        adminHardDeleteService.hardDeleteOrganization(id);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/positions")
     @Transactional(readOnly = true)
     public List<Map<String, Object>> positions(@AuthenticationPrincipal AuthenticatedUser user) {
@@ -322,6 +347,15 @@ public class AdminController {
         requireManager(user);
         int updated = jdbcTemplate.update("update positions set active = false where id = ?", id);
         requireUpdated(updated, "Position not found: " + id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/positions/{id}/hard-delete")
+    public ResponseEntity<Void> hardDeletePosition(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable long id) {
+        requireAdmin(user);
+        adminHardDeleteService.hardDeletePosition(id);
         return ResponseEntity.noContent().build();
     }
 
@@ -472,6 +506,15 @@ public class AdminController {
         return ResponseEntity.noContent().build();
     }
 
+    @DeleteMapping("/approval-lines/{id}/hard-delete")
+    public ResponseEntity<Void> hardDeleteApprovalLine(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable long id) {
+        requireAdmin(user);
+        adminHardDeleteService.hardDeleteApprovalLine(id);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/approval-org-exceptions")
     @Transactional(readOnly = true)
     public List<ApprovalOrgExceptionResponse> approvalOrgExceptions(@AuthenticationPrincipal AuthenticatedUser user) {
@@ -551,6 +594,15 @@ public class AdminController {
         return ResponseEntity.noContent().build();
     }
 
+    @DeleteMapping("/approval-org-exceptions/{id}/hard-delete")
+    public ResponseEntity<Void> hardDeleteApprovalOrgException(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable long id) {
+        requireAdmin(user);
+        adminHardDeleteService.hardDeleteApprovalOrgException(id);
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/approvals/steps/{stepId}/approve")
     @Transactional
     public AdminApprovalResponse adminApprove(
@@ -569,6 +621,16 @@ public class AdminController {
                 .stream()
                 .map(AdminApplicationResponse::from)
                 .toList();
+    }
+
+    @DeleteMapping("/applications/{id}/hard-delete")
+    @Transactional
+    public ResponseEntity<Void> hardDeleteApplication(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable long id) {
+        requireAdmin(user);
+        applicationHardDeleteService.hardDeleteByAdmin(id);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/notification-events")

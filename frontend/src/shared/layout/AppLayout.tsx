@@ -1,15 +1,18 @@
 import {
   Bell,
   Building2,
+  CalendarDays,
   FileClock,
   FilePlus2,
   FileText,
   LayoutDashboard,
   ListChecks,
   LogOut,
+  Menu,
   Network,
   PanelLeft,
   KeyRound,
+  MoreHorizontal,
   ShieldCheck,
   UsersRound
 } from 'lucide-react';
@@ -23,6 +26,7 @@ import { NotificationDrawer } from '../notifications/NotificationDrawer';
 
 const workNavItems = [
   { to: '/dashboard', label: '대시보드', icon: LayoutDashboard },
+  { to: '/calendar', label: '캘린더', icon: CalendarDays },
   { to: '/applications/new', label: '새 신청', icon: FilePlus2 },
   { to: '/applications/my', label: '내 신청서', icon: FileClock },
   { to: '/approvals', label: '결재함', icon: ListChecks }
@@ -56,6 +60,7 @@ export function AppLayout() {
   const canManage = isAdmin || auth.hasRole('MANAGER');
   const [isNotificationOpen, setNotificationOpen] = useState(false);
   const [isPasswordOpen, setPasswordOpen] = useState(false);
+  const [isMobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const notificationButtonRef = useRef<HTMLButtonElement | null>(null);
 
@@ -97,6 +102,10 @@ export function AppLayout() {
   function closeNotifications() {
     setNotificationOpen(false);
     window.requestAnimationFrame(() => notificationButtonRef.current?.focus());
+  }
+
+  function closeMobileMore() {
+    setMobileMoreOpen(false);
   }
 
   return (
@@ -171,6 +180,47 @@ export function AppLayout() {
           <Outlet />
         </main>
       </div>
+      <nav className="mobile-tabbar" aria-label="모바일 주요 메뉴">
+        {workNavItems.map(({ to, label, icon: Icon }) => (
+          <NavLink key={to} to={to} onClick={closeMobileMore}>
+            <Icon aria-hidden="true" size={18} />
+            <span>{label}</span>
+          </NavLink>
+        ))}
+        <button
+          type="button"
+          aria-label="더보기 메뉴 열기"
+          aria-expanded={isMobileMoreOpen}
+          onClick={() => setMobileMoreOpen((value) => !value)}
+        >
+          <MoreHorizontal aria-hidden="true" size={18} />
+          <span>더보기</span>
+        </button>
+      </nav>
+      {isMobileMoreOpen ? (
+        <div className="mobile-more-panel" role="dialog" aria-label="모바일 더보기 메뉴">
+          <div className="table-toolbar borderless-panel">
+            <strong>더보기</strong>
+            <button className="icon-button" type="button" aria-label="더보기 메뉴 닫기" onClick={closeMobileMore}>
+              <Menu aria-hidden="true" size={18} />
+            </button>
+          </div>
+          <nav className="mobile-more-links" aria-label="모바일 관리 메뉴">
+            {canManage ? (
+              <>
+                {[...referenceNavItems, ...adminOnlyNavItems].map(({ to, label, icon: Icon }) => (
+                  <NavLink key={to} to={to} onClick={closeMobileMore}>
+                    <Icon aria-hidden="true" size={18} />
+                    <span>{label}</span>
+                  </NavLink>
+                ))}
+              </>
+            ) : (
+              <p className="panel-message">관리 메뉴 권한이 없습니다.</p>
+            )}
+          </nav>
+        </div>
+      ) : null}
       {isNotificationOpen ? (
         <NotificationDrawer
           onClose={closeNotifications}
