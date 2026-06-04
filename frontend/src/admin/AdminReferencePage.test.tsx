@@ -237,7 +237,7 @@ describe('AdminReferencePage', () => {
       method: 'PUT'
     }));
 
-    await userEvent.click(within(await screen.findByRole('row', { name: /#1 사원/ })).getByRole('button', { name: '삭제' }));
+    await userEvent.click(within(await screen.findByRole('row', { name: /#1 사원/ })).getByRole('button', { name: '비활성화' }));
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/positions/1', expect.objectContaining({
       method: 'DELETE'
     }));
@@ -254,8 +254,21 @@ describe('AdminReferencePage', () => {
     expect(screen.getByText('employee01')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '새 항목' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '수정' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '삭제' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '비활성화' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '완전 삭제' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '비밀번호 변경' })).not.toBeInTheDocument();
+  });
+
+  it('관리자 기준정보 화면은 모바일 보조 컨테이너를 렌더링한다', async () => {
+    setAuth(['MANAGER', 'APPLICANT']);
+    window.history.pushState({}, '', '/admin/users');
+    vi.stubGlobal('fetch', mockReferenceFetch());
+
+    render(<App />);
+
+    const heading = await screen.findByRole('heading', { name: '사용자 관리' });
+    expect(heading.closest('.admin-reference-page')).not.toBeNull();
+    expect(screen.getByRole('table').closest('.admin-mobile-table-shell')).not.toBeNull();
   });
 
   it('매니저는 결재선 관리 화면에 직접 진입해 결재선을 조회할 수 있다', async () => {
@@ -302,6 +315,42 @@ describe('AdminReferencePage', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('비밀번호가 변경되었습니다.');
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/users/3/password', expect.objectContaining({
       method: 'PUT'
+    }));
+  });
+
+  it('관리자는 기준정보를 확인 후 완전 삭제할 수 있다', async () => {
+    setAuth(['ADMIN', 'APPLICANT']);
+    window.history.pushState({}, '', '/admin/positions');
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/admin/positions/1/hard-delete' && init?.method === 'DELETE') {
+        return new Response(null, { status: 204 });
+      }
+      if (url === '/api/admin/positions' && !init?.method) {
+        return new Response(JSON.stringify(positions), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    const row = await screen.findByRole('row', { name: /#1 사원/ });
+    await userEvent.click(within(row).getByRole('button', { name: '완전 삭제' }));
+
+    const dialog = screen.getByRole('dialog', { name: '완전 삭제' });
+    expect(dialog).toHaveTextContent('복구할 수 없습니다');
+    await userEvent.click(within(dialog).getByRole('button', { name: '완전 삭제' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('완전 삭제되었습니다.');
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/positions/1/hard-delete', expect.objectContaining({
+      method: 'DELETE'
     }));
   });
 

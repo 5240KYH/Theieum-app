@@ -9,6 +9,7 @@ import { MyApplicationsPage } from '../applications/MyApplicationsPage';
 import { ApprovalsInboxPage } from '../approvals/ApprovalsInboxPage';
 import { LoginPage } from '../auth/LoginPage';
 import { ProtectedRoute } from '../auth/ProtectedRoute';
+import { CalendarPage } from '../calendar/CalendarPage';
 import { DashboardPage } from '../dashboard/DashboardPage';
 import { AppLayout } from '../shared/layout/AppLayout';
 
@@ -20,6 +21,7 @@ export function AppRoutes() {
         <Route element={<AppLayout />}>
           <Route index element={<Navigate replace to="/dashboard" />} />
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/calendar" element={<CalendarPage />} />
           <Route element={<ProtectedRoute requiredRole="APPLICANT" />}>
             <Route path="/applications/new" element={<ApplicationForm />} />
             <Route path="/applications/:id/edit" element={<ApplicationForm />} />

@@ -1,9 +1,10 @@
-import { Edit3, FileImage, RefreshCcw, XCircle } from 'lucide-react';
+import { Edit3, FileImage, RefreshCcw, Trash2, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
+import { useAuth } from '../auth/AuthContext';
 import { ApiError } from '../shared/api';
-import { cancelApplication, getApplication, getAttachmentContent } from './applicationApi';
+import { cancelApplication, getApplication, getAttachmentContent, hardDeleteApplication } from './applicationApi';
 import {
   applicationStatusLabel,
   ApplicationResponse,
@@ -24,9 +25,14 @@ function errorMessage(error: unknown) {
 }
 
 export function ApplicationDetailPage() {
+  const auth = useAuth();
   const { id } = useParams();
+  const navigate = useNavigate();
   const [application, setApplication] = useState<ApplicationResponse | null>(null);
   const [isLoading, setLoading] = useState(true);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const [error, setError] = useState('');
 
   async function loadApplication() {
@@ -60,9 +66,33 @@ export function ApplicationDetailPage() {
     }
   }
 
+  async function handleHardDeleteApplication() {
+    if (!application) {
+      return;
+    }
+
+    setDeleting(true);
+    setDeleteError('');
+    setError('');
+
+    try {
+      await hardDeleteApplication(application.id);
+      navigate('/applications/my');
+    } catch (requestError) {
+      setDeleteError(errorMessage(requestError));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   useEffect(() => {
     void loadApplication();
   }, [id]);
+
+  const canHardDelete = application
+    ? (application.status === 'DRAFT' || application.status === 'CANCELED')
+      && (auth.hasRole('ADMIN') || application.applicant.id === auth.user?.id)
+    : false;
 
   return (
     <section className="page-section" aria-labelledby="page-title">
@@ -71,7 +101,7 @@ export function ApplicationDetailPage() {
           <p className="eyebrow">신청 업무</p>
           <h1 id="page-title">신청서 상세</h1>
         </div>
-        <div className="row-actions">
+        <div className="row-actions mobile-detail-actions">
           {application && canEditApplication(application.status) ? (
             <Link className="secondary-button" to={`/applications/${application.id}/edit`}>
               <Edit3 aria-hidden="true" size={16} />
@@ -82,6 +112,12 @@ export function ApplicationDetailPage() {
             <button className="secondary-button danger-button" type="button" onClick={handleCancelApplication}>
               <XCircle aria-hidden="true" size={16} />
               신청 취소
+            </button>
+          ) : null}
+          {application && canHardDelete ? (
+            <button className="secondary-button hard-delete-button" type="button" onClick={() => setShowDeleteConfirm(true)}>
+              <Trash2 aria-hidden="true" size={16} />
+              신청서 삭제
             </button>
           ) : null}
           <button className="secondary-button" type="button" onClick={loadApplication}>
@@ -176,6 +212,36 @@ export function ApplicationDetailPage() {
             <div className="table-toolbar">
               <strong id="approval-history-title">결재 이력</strong>
             </div>
+            {application.approvalHistories && application.approvalHistories.length > 0 ? (
+              <div className="mobile-card-list approval-history-cards" role="list" aria-label="모바일 결재 이력">
+                {application.approvalHistories.map((history) => (
+                  <article className="mobile-card" role="listitem" key={history.id}>
+                    <div className="mobile-card-title">
+                      <strong>{approvalStepStatusLabel(history.action)}</strong>
+                      <span className="status-pill compact">{history.stepOrder ?? '-'}단계</span>
+                    </div>
+                    <dl className="mobile-card-meta">
+                      <div>
+                        <dt>원 결재자</dt>
+                        <dd>{history.originalApprover?.name ?? '-'}</dd>
+                      </div>
+                      <div>
+                        <dt>처리자</dt>
+                        <dd>{history.actor.name}</dd>
+                      </div>
+                      <div>
+                        <dt>사유/메모</dt>
+                        <dd>{history.adminReason ?? history.comment ?? '-'}</dd>
+                      </div>
+                      <div>
+                        <dt>처리일</dt>
+                        <dd>{formatDateTime(history.actedAt)}</dd>
+                      </div>
+                    </dl>
+                  </article>
+                ))}
+              </div>
+            ) : null}
             <div className="table-scroll">
               <table>
                 <thead>
@@ -210,6 +276,51 @@ export function ApplicationDetailPage() {
             </div>
           </section>
         </>
+      ) : null}
+
+      {application && showDeleteConfirm ? (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="application-hard-delete-title">
+          <div className="preview-modal compact-modal danger-modal">
+            <div className="table-toolbar borderless-panel">
+              <strong id="application-hard-delete-title">신청서 삭제</strong>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="닫기"
+                onClick={() => {
+                  if (!isDeleting) {
+                    setShowDeleteConfirm(false);
+                    setDeleteError('');
+                  }
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <div className="form-panel borderless-panel">
+              <p className="danger-copy">이 신청서와 첨부파일은 복구할 수 없습니다.</p>
+              <dl className="definition-grid compact-definition">
+                <div>
+                  <dt>신청서</dt>
+                  <dd>#{application.id}</dd>
+                </div>
+                <div>
+                  <dt>상태</dt>
+                  <dd>{applicationStatusLabel(application.status)}</dd>
+                </div>
+              </dl>
+              {deleteError ? <p className="form-error" role="alert">{deleteError}</p> : null}
+              <div className="form-actions">
+                <button className="secondary-button" type="button" disabled={isDeleting} onClick={() => setShowDeleteConfirm(false)}>
+                  취소
+                </button>
+                <button className="primary-button hard-delete-confirm-button" type="button" disabled={isDeleting} onClick={() => void handleHardDeleteApplication()}>
+                  삭제
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       ) : null}
     </section>
   );

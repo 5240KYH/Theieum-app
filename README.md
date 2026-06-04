@@ -6,6 +6,7 @@ Spring Boot, React/Vite, PostgreSQL 기반 전자결재 MVP입니다.
 
 - [관리자 운영 가이드](docs/admin-user-guide.md): 실행, 배포, 관리자 이용, 운영 점검 절차
 - [배포 전 체크리스트](docs/deployment-readiness-checklist.md): 운영 후보 배포 전 확인 항목
+- [외부 체험자 가이드](docs/staging-test-guide.md): 스테이징 URL, 테스트 계정, 모바일 체험 시나리오 안내
 - [반려 재상신 구현 계획](docs/superpowers/plans/2026-06-03-rejected-application-resubmission.md): 반려 신청서 재상신 후속 구현 plan
 
 ## 로컬 실행
@@ -40,6 +41,18 @@ docker compose up --build
 - PostgreSQL: `localhost:5432`
 
 Docker Compose 실행은 MVP 확인을 위해 `local` profile을 사용하므로 seed 계정이 함께 생성됩니다.
+
+## 스테이징 체험 환경
+
+외부 테스트 인원 5~10명이 체험할 환경은 로컬 `docker-compose.yml`을 그대로 공개하지 않고 `docker-compose.staging.yml`과 `.env.staging`로 분리해 실행한다.
+
+```bash
+cp .env.staging.example .env.staging
+docker compose --env-file .env.staging -f docker-compose.staging.yml config
+docker compose --env-file .env.staging -f docker-compose.staging.yml up --build -d postgres backend frontend
+```
+
+스테이징 서버에서는 PostgreSQL과 backend 포트를 외부에 직접 공개하지 않는다. HTTPS는 서버 앞단의 Caddy, nginx+certbot, Cloudflare Tunnel, 또는 배포 플랫폼의 HTTPS 기능으로 적용한다.
 
 ## 기본 계정
 

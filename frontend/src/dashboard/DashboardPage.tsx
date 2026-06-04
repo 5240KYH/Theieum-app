@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Bell, ClipboardList, ListChecks } from 'lucide-react';
+import { AlertCircle, Bell, CalendarDays, ClipboardList, ListChecks } from 'lucide-react';
 
 import { getMyApplications } from '../applications/applicationApi';
 import { ApplicationResponse } from '../applications/applicationTypes';
 import { getApprovalInbox } from '../approvals/approvalApi';
 import { ApprovalInboxItem } from '../approvals/approvalTypes';
 import { useAuth } from '../auth/AuthContext';
+import { getCalendarEvents } from '../calendar/calendarApi';
+import { CalendarBoard, CalendarViewMode } from '../calendar/CalendarBoard';
+import { CalendarEvent } from '../calendar/calendarTypes';
+import { addDaysToDateKey, dateKey, monthRange } from '../calendar/calendarUtils';
 import { ApiError } from '../shared/api';
 import { getNotifications } from '../shared/notifications/notificationApi';
 import { NotificationItem } from '../shared/notifications/notificationTypes';
@@ -31,7 +35,12 @@ export function DashboardPage() {
   const [applications, setApplications] = useState<ApplicationResponse[]>([]);
   const [approvalInbox, setApprovalInbox] = useState<ApprovalInboxItem[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [calendarView, setCalendarView] = useState<CalendarViewMode>('month');
+  const [currentMonth, setCurrentMonth] = useState(() => new Date());
+  const [selectedDate, setSelectedDate] = useState(() => dateKey(new Date()));
   const [error, setError] = useState('');
+  const calendarRange = useMemo(() => monthRange(currentMonth), [currentMonth]);
 
   useEffect(() => {
     let ignore = false;
@@ -45,10 +54,12 @@ export function DashboardPage() {
           auth.hasRole('APPROVER') ? loadOrEmpty(getApprovalInbox) : Promise.resolve([]),
           loadOrEmpty(getNotifications)
         ]);
+        const sharedEvents = await loadOrEmpty(() => getCalendarEvents(calendarRange.from, calendarRange.to));
         if (!ignore) {
           setApplications(myApplications);
           setApprovalInbox(inbox);
           setNotifications(myNotifications);
+          setCalendarEvents(sharedEvents);
         }
       } catch (requestError) {
         if (!ignore) {
@@ -62,7 +73,7 @@ export function DashboardPage() {
     return () => {
       ignore = true;
     };
-  }, [auth]);
+  }, [auth, calendarRange.from, calendarRange.to]);
 
   const metrics = useMemo(() => {
     const inProgress = applications.filter((application) => application.status === 'IN_APPROVAL').length;
@@ -76,6 +87,23 @@ export function DashboardPage() {
       { label: '최근 알림', value: unread, icon: Bell }
     ];
   }, [applications, approvalInbox, notifications]);
+
+  function moveCalendarPeriod(direction: number) {
+    if (calendarView === 'week') {
+      const nextSelected = addDaysToDateKey(selectedDate, direction * 7);
+      const nextDate = new Date(`${nextSelected}T00:00:00`);
+      setSelectedDate(nextSelected);
+      setCurrentMonth(new Date(nextDate.getFullYear(), nextDate.getMonth(), 1));
+      return;
+    }
+    setCurrentMonth((value) => new Date(value.getFullYear(), value.getMonth() + direction, 1));
+  }
+
+  function goToday() {
+    const today = new Date();
+    setCurrentMonth(today);
+    setSelectedDate(dateKey(today));
+  }
 
   return (
     <section className="page-section" aria-labelledby="page-title">
@@ -97,6 +125,27 @@ export function DashboardPage() {
             <strong>{value}</strong>
           </div>
         ))}
+      </div>
+
+      <div className="dashboard-calendar-panel table-panel">
+        <div className="table-toolbar">
+          <strong>
+            <CalendarDays aria-hidden="true" size={18} />
+            공용 캘린더
+          </strong>
+        </div>
+        <CalendarBoard
+          events={calendarEvents}
+          currentMonth={currentMonth}
+          selectedDate={selectedDate}
+          viewMode={calendarView}
+          onMovePeriod={moveCalendarPeriod}
+          onToday={goToday}
+          onViewModeChange={setCalendarView}
+          onSelectDate={setSelectedDate}
+          onOpenEvent={() => undefined}
+          className="dashboard-calendar-board"
+        />
       </div>
 
       <div className="table-panel">

@@ -20,6 +20,11 @@ import {
   getAdminOrganizations,
   getAdminPositions,
   getAdminUsers,
+  hardDeleteAdminApprovalLine,
+  hardDeleteAdminApprovalOrgException,
+  hardDeleteAdminOrganization,
+  hardDeleteAdminPosition,
+  hardDeleteAdminUser,
   updateAdminApprovalLine,
   updateAdminApprovalOrgException,
   updateAdminOrganization,
@@ -61,6 +66,7 @@ interface PageConfig {
   create: (payload: unknown) => Promise<ReferenceItem>;
   update: (id: number, payload: unknown) => Promise<ReferenceItem>;
   remove: (id: number) => Promise<void>;
+  hardRemove: (id: number) => Promise<void>;
 }
 
 const STEP_TEMPLATE = '1,DIRECT_USER,,,2,POSITION_ORDER';
@@ -96,6 +102,7 @@ function configs(): Record<AdminReferenceKind, PageConfig> {
       create: createAdminUser as (payload: unknown) => Promise<ReferenceItem>,
       update: updateAdminUser as (id: number, payload: unknown) => Promise<ReferenceItem>,
       remove: deleteAdminUser,
+      hardRemove: hardDeleteAdminUser,
       headers: ['ID', '아이디', '이름', '이메일', '조직', '직위', '역할', '상태', '관리'],
       fields: [
         { key: 'loginId', label: '아이디' },
@@ -115,6 +122,7 @@ function configs(): Record<AdminReferenceKind, PageConfig> {
       create: createAdminOrganization as (payload: unknown) => Promise<ReferenceItem>,
       update: updateAdminOrganization as (id: number, payload: unknown) => Promise<ReferenceItem>,
       remove: deleteAdminOrganization,
+      hardRemove: hardDeleteAdminOrganization,
       headers: ['ID', '조직명', '상위조직', '레벨', '정렬', '상태', '관리'],
       fields: [
         { key: 'name', label: '조직명' },
@@ -131,6 +139,7 @@ function configs(): Record<AdminReferenceKind, PageConfig> {
       create: createAdminPosition as (payload: unknown) => Promise<ReferenceItem>,
       update: updateAdminPosition as (id: number, payload: unknown) => Promise<ReferenceItem>,
       remove: deleteAdminPosition,
+      hardRemove: hardDeleteAdminPosition,
       headers: ['ID', '직위명', '직위 순서', '정렬', '상태', '관리'],
       fields: [
         { key: 'name', label: '직위명' },
@@ -146,6 +155,7 @@ function configs(): Record<AdminReferenceKind, PageConfig> {
       create: createAdminApprovalLine as (payload: unknown) => Promise<ReferenceItem>,
       update: updateAdminApprovalLine as (id: number, payload: unknown) => Promise<ReferenceItem>,
       remove: deleteAdminApprovalLine,
+      hardRemove: hardDeleteAdminApprovalLine,
       headers: ['ID', '결재선명', '결재 유형', '단계', '상태', '관리'],
       fields: [
         { key: 'approvalTypeId', label: '결재 유형', type: 'number' },
@@ -161,6 +171,7 @@ function configs(): Record<AdminReferenceKind, PageConfig> {
       create: createAdminApprovalOrgException as (payload: unknown) => Promise<ReferenceItem>,
       update: updateAdminApprovalOrgException as (id: number, payload: unknown) => Promise<ReferenceItem>,
       remove: deleteAdminApprovalOrgException,
+      hardRemove: hardDeleteAdminApprovalOrgException,
       headers: ['ID', '결재 유형', '조직', '예외 결재자', '단계', '상태', '관리'],
       fields: [
         { key: 'approvalTypeId', label: '결재 유형', type: 'number' },
@@ -175,6 +186,18 @@ function configs(): Record<AdminReferenceKind, PageConfig> {
 
 function itemId(item: ReferenceItem) {
   return item.id;
+}
+
+function itemDisplayName(kind: AdminReferenceKind, item: ReferenceItem) {
+  if (kind === 'users') {
+    const user = item as AdminUser;
+    return `${user.name} (${user.login_id})`;
+  }
+  if (kind === 'approvalOrgExceptions') {
+    const exception = item as AdminApprovalOrgException;
+    return `${exception.organizationName} / ${exception.approverName}`;
+  }
+  return 'name' in item ? item.name : `#${item.id}`;
 }
 
 function isActive(item: ReferenceItem) {
@@ -464,6 +487,9 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
   const [positions, setPositions] = useState<AdminPosition[]>([]);
   const [selectableUsers, setSelectableUsers] = useState<AdminUser[]>([]);
   const [passwordTarget, setPasswordTarget] = useState<AdminUser | null>(null);
+  const [hardDeleteTarget, setHardDeleteTarget] = useState<ReferenceItem | null>(null);
+  const [hardDeleteError, setHardDeleteError] = useState('');
+  const [isHardDeleting, setHardDeleting] = useState(false);
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -574,6 +600,8 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
     setEditingId(null);
     setDraft({});
     setPasswordTarget(null);
+    setHardDeleteTarget(null);
+    setHardDeleteError('');
     setPassword('');
     setMessage('');
     void load(config, kind, () => !ignore);
@@ -647,6 +675,43 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
     }
   }
 
+  function openHardDelete(item: ReferenceItem) {
+    setHardDeleteTarget(item);
+    setHardDeleteError('');
+    setMessage('');
+    setError('');
+  }
+
+  function closeHardDelete() {
+    if (isHardDeleting) {
+      return;
+    }
+    setHardDeleteTarget(null);
+    setHardDeleteError('');
+  }
+
+  async function handleHardDelete() {
+    if (!hardDeleteTarget) {
+      return;
+    }
+
+    setHardDeleting(true);
+    setHardDeleteError('');
+    setError('');
+    setMessage('');
+
+    try {
+      await config.hardRemove(itemId(hardDeleteTarget));
+      setHardDeleteTarget(null);
+      setMessage('완전 삭제되었습니다.');
+      await load();
+    } catch (requestError) {
+      setHardDeleteError(errorMessage(requestError));
+    } finally {
+      setHardDeleting(false);
+    }
+  }
+
   async function handlePasswordSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!passwordTarget) {
@@ -669,7 +734,7 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
   const isEditing = isCreating || editingId !== null;
 
   return (
-    <section className="page-section" aria-labelledby="page-title">
+    <section className="page-section admin-reference-page" aria-labelledby="page-title">
       <div className="page-header">
         <div>
           <p className="eyebrow">관리</p>
@@ -866,7 +931,7 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
       {error ? <p className="form-error" role="alert">{error}</p> : null}
       {message ? <p className="form-success" role="status">{message}</p> : null}
 
-      <div className="table-panel">
+      <div className="table-panel admin-mobile-table-shell">
         <div className="table-scroll">
           <table>
             <thead>
@@ -895,8 +960,14 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
                         ) : null}
                         <button className="secondary-button danger-button" type="button" onClick={() => void handleDelete(item)}>
                           <Trash2 aria-hidden="true" size={16} />
-                          삭제
+                          비활성화
                         </button>
+                        {isAdmin ? (
+                          <button className="secondary-button hard-delete-button" type="button" onClick={() => openHardDelete(item)}>
+                            <Trash2 aria-hidden="true" size={16} />
+                            완전 삭제
+                          </button>
+                        ) : null}
                       </div>
                     ) : (
                       <span className="muted-copy">읽기 전용</span>
@@ -934,6 +1005,39 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
               <button className="primary-button" type="submit">변경 저장</button>
             </div>
           </form>
+        </div>
+      ) : null}
+
+      {hardDeleteTarget ? (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="hard-delete-title">
+          <div className="preview-modal compact-modal danger-modal">
+            <div className="table-toolbar borderless-panel">
+              <strong id="hard-delete-title">완전 삭제</strong>
+              <button className="icon-button" type="button" aria-label="닫기" onClick={closeHardDelete}>×</button>
+            </div>
+            <div className="form-panel borderless-panel">
+              <p className="danger-copy">
+                이 데이터는 복구할 수 없습니다.
+              </p>
+              <dl className="definition-grid compact-definition">
+                <div>
+                  <dt>ID</dt>
+                  <dd>#{itemId(hardDeleteTarget)}</dd>
+                </div>
+                <div>
+                  <dt>대상</dt>
+                  <dd>{itemDisplayName(kind, hardDeleteTarget)}</dd>
+                </div>
+              </dl>
+              {hardDeleteError ? <p className="form-error" role="alert">{hardDeleteError}</p> : null}
+              <div className="form-actions">
+                <button className="secondary-button" type="button" onClick={closeHardDelete} disabled={isHardDeleting}>취소</button>
+                <button className="primary-button hard-delete-confirm-button" type="button" disabled={isHardDeleting} onClick={() => void handleHardDelete()}>
+                  완전 삭제
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       ) : null}
     </section>

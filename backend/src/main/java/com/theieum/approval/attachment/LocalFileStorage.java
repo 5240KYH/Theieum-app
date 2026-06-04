@@ -47,6 +47,15 @@ public class LocalFileStorage implements FileStorage {
         }
     }
 
+    @Override
+    public void deleteIfExists(String path) {
+        try {
+            Files.deleteIfExists(Path.of(path));
+        } catch (IOException ex) {
+            throw new FileStorageException("Unable to delete attachment", ex);
+        }
+    }
+
     private String extractExtension(String originalFilename) {
         if (originalFilename == null) {
             return "";

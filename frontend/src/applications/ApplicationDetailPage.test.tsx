@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import { App } from '../app/App';
 
@@ -169,6 +170,48 @@ describe('ApplicationDetailPage', () => {
     }));
   });
 
+  it('작성자는 임시저장 신청서를 완전 삭제할 수 있다', async () => {
+    const draftResponse = {
+      ...applicationResponse,
+      status: 'DRAFT',
+      submittedAt: null,
+      attachments: []
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url === '/api/applications/100/hard-delete' && init?.method === 'DELETE') {
+        return new Response(null, { status: 204 });
+      }
+
+      if (url === '/api/applications/100') {
+        return new Response(JSON.stringify(draftResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      return new Response(null, { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: '신청서 상세' });
+    await userEvent.click(screen.getByRole('button', { name: '신청서 삭제' }));
+    const dialog = screen.getByRole('dialog', { name: '신청서 삭제' });
+    expect(dialog).toHaveTextContent('복구할 수 없습니다');
+
+    await userEvent.click(within(dialog).getByRole('button', { name: '삭제' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith('/api/applications/100/hard-delete', expect.objectContaining({
+        method: 'DELETE'
+      }));
+    });
+    expect(window.location.pathname).toBe('/applications/my');
+  });
+
   it('취소된 신청서는 다시 수정할 수 있지만 결재 진행중 신청서는 수정할 수 없다', async () => {
     const canceledResponse = {
       ...applicationResponse,
@@ -245,9 +288,50 @@ describe('ApplicationDetailPage', () => {
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: '신청서 상세' })).toBeInTheDocument();
-    expect(await screen.findByText('관리자')).toBeInTheDocument();
-    expect(screen.getByText('개발팀장')).toBeInTheDocument();
-    expect(screen.getByText('관리자 승인')).toBeInTheDocument();
-    expect(screen.getByText('결재자 부재로 관리자 예외 승인')).toBeInTheDocument();
+    expect(await screen.findAllByText('관리자')).not.toHaveLength(0);
+    expect(screen.getAllByText('개발팀장')).not.toHaveLength(0);
+    expect(screen.getAllByText('관리자 승인')).not.toHaveLength(0);
+    expect(screen.getAllByText('결재자 부재로 관리자 예외 승인')).not.toHaveLength(0);
+  });
+
+  it('모바일에서 상세 액션과 결재 이력을 카드 구조로 제공한다', async () => {
+    const auditedResponse = {
+      ...applicationResponse,
+      attachments: [],
+      approvalHistories: [
+        {
+          id: 801,
+          stepOrder: 1,
+          action: 'APPROVED',
+          originalApprover: { id: 18, name: '개발팀장' },
+          actor: { id: 18, name: '개발팀장' },
+          adminOverride: false,
+          adminReason: null,
+          comment: '확인했습니다.',
+          actedAt: '2026-06-03T02:00:00Z'
+        }
+      ]
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === '/api/applications/100') {
+          return new Response(JSON.stringify(auditedResponse), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
+        return new Response(null, { status: 404 });
+      })
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '신청서 상세' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '새로고침' }).closest('.mobile-detail-actions')).not.toBeNull();
+    const mobileHistory = screen.getByRole('list', { name: '모바일 결재 이력' });
+    expect(mobileHistory).toBeInTheDocument();
+    expect(within(mobileHistory).getByText('확인했습니다.')).toBeInTheDocument();
   });
 });

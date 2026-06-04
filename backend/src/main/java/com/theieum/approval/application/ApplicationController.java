@@ -11,6 +11,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -46,6 +47,7 @@ public class ApplicationController {
     private final ApprovalHistoryRepository approvalHistoryRepository;
     private final AttachmentRepository attachmentRepository;
     private final FileStorage fileStorage;
+    private final ApplicationHardDeleteService applicationHardDeleteService;
 
     public ApplicationController(
             ApplicationService applicationService,
@@ -53,13 +55,15 @@ public class ApplicationController {
             ApplicationApprovalStepRepository approvalStepRepository,
             ApprovalHistoryRepository approvalHistoryRepository,
             AttachmentRepository attachmentRepository,
-            FileStorage fileStorage) {
+            FileStorage fileStorage,
+            ApplicationHardDeleteService applicationHardDeleteService) {
         this.applicationService = applicationService;
         this.applicationRepository = applicationRepository;
         this.approvalStepRepository = approvalStepRepository;
         this.approvalHistoryRepository = approvalHistoryRepository;
         this.attachmentRepository = attachmentRepository;
         this.fileStorage = fileStorage;
+        this.applicationHardDeleteService = applicationHardDeleteService;
     }
 
     @GetMapping("/my")
@@ -178,6 +182,16 @@ public class ApplicationController {
             @PathVariable long id) {
         requireRole(user, "APPLICANT");
         return toResponse(applicationService.cancelDraft(id, user.id()));
+    }
+
+    @DeleteMapping("/{id}/hard-delete")
+    @Transactional
+    public ResponseEntity<Void> hardDelete(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable long id) {
+        requireRole(user, "APPLICANT");
+        applicationHardDeleteService.hardDeleteByApplicant(id, user.id());
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/{id}")

@@ -105,6 +105,76 @@ export function ApprovalsInboxPage() {
         <div className="table-toolbar">
           <strong>결재 대기 목록</strong>
         </div>
+        {!isLoading && items.length > 0 ? (
+          <section className="mobile-card-list approval-inbox-cards" aria-label="모바일 결재 카드 목록">
+            {items.map((item) => (
+              <article className="mobile-card approval-inbox-card" key={item.stepId}>
+                <div className="mobile-card-title">
+                  <strong>{item.vendor}</strong>
+                  <span className="status-pill compact">{applicationStatusLabel(item.applicationStatus)}</span>
+                </div>
+                <dl className="mobile-card-meta">
+                  <div>
+                    <dt>신청자</dt>
+                    <dd>{item.applicantName}</dd>
+                  </div>
+                  <div>
+                    <dt>조직</dt>
+                    <dd>{item.organizationName ?? '-'}</dd>
+                  </div>
+                  <div>
+                    <dt>금액</dt>
+                    <dd>{formatMoney(item.amount)}</dd>
+                  </div>
+                  <div>
+                    <dt>영수증 일자</dt>
+                    <dd>{formatDate(item.receiptDate)}</dd>
+                  </div>
+                  <div>
+                    <dt>첨부</dt>
+                    <dd>{attachmentLabel(item.hasAttachment)}</dd>
+                  </div>
+                </dl>
+                <label className="wide-field compact-mobile-comment">
+                  모바일 결재 의견
+                  <input
+                    aria-label="모바일 결재 의견"
+                    className="comment-input"
+                    value={comments[item.stepId] ?? ''}
+                    onChange={(event) => setComments((current) => ({
+                      ...current,
+                      [item.stepId]: event.target.value
+                    }))}
+                    placeholder="의견"
+                  />
+                </label>
+                <div className="row-actions mobile-card-actions">
+                  <button
+                    className="secondary-button"
+                    disabled={processingStepId === item.stepId}
+                    type="button"
+                    onClick={() => void handleApprove(item.stepId)}
+                  >
+                    <Check aria-hidden="true" size={16} />
+                    승인
+                  </button>
+                  <button
+                    className="secondary-button danger-button"
+                    disabled={processingStepId === item.stepId}
+                    type="button"
+                    onClick={() => void handleReject(item.stepId)}
+                  >
+                    <X aria-hidden="true" size={16} />
+                    반려
+                  </button>
+                  <Link className="icon-button" to={`/applications/${item.applicationId}`} aria-label={`신청서 ${item.applicationId} 상세`}>
+                    <Eye aria-hidden="true" size={16} />
+                  </Link>
+                </div>
+              </article>
+            ))}
+          </section>
+        ) : null}
         <div className="table-scroll">
           <table>
             <thead>
