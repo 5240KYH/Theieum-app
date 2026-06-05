@@ -12,4 +12,6 @@ public interface AttachmentRepository extends JpaRepository<Attachment, Long> {
     List<Attachment> findByApplicationIdOrderByIdAsc(Long applicationId);
 
     Optional<Attachment> findByIdAndApplicationId(Long id, Long applicationId);
+
+    long countByApplicationId(Long applicationId);
 }

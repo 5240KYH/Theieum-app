@@ -15,5 +15,8 @@ spring:
 app:
   file-storage:
     root-path: ${FILE_STORAGE_ROOT:./data/uploads}
+  attachments:
+    max-image-bytes: ${ATTACHMENT_MAX_IMAGE_BYTES:5242880}
+    max-files-per-application: ${ATTACHMENT_MAX_FILES_PER_APPLICATION:10}
   security:
     jwt-secret: ${JWT_SECRET}

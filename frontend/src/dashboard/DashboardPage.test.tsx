@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { App } from '../app/App';
@@ -50,9 +50,11 @@ describe('DashboardPage', () => {
     cleanup();
     storage.clear();
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it('신청자 대시보드는 결재함 API를 호출하지 않는다', async () => {
+    vi.setSystemTime(new Date('2026-06-05T09:00:00+09:00'));
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
 
@@ -101,7 +103,19 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('button', { name: '월 보기' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: '주 보기' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '목록 보기' })).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: /09:00 월간 마감/ })).toBeInTheDocument();
+    const eventChip = await screen.findByRole('button', { name: /09:00-10:00 월간 마감/ });
+    expect(eventChip).toBeInTheDocument();
+    expect(screen.getByLabelText('모바일 선택 날짜 일정')).toHaveTextContent('선택한 날짜의 일정이 없습니다.');
+
+    await userEvent.click(eventChip);
+
+    expect(screen.getByLabelText('모바일 선택 날짜 일정')).toHaveTextContent('2026-06-10 일정');
+    expect(screen.getByLabelText('모바일 선택 날짜 일정')).toHaveTextContent('월간 마감');
+
+    fireEvent.click(screen.getByLabelText('2026-06-11 날짜 영역 선택'));
+
+    expect(screen.getByLabelText('모바일 선택 날짜 일정')).toHaveTextContent('2026-06-11 일정');
+    expect(screen.getByLabelText('모바일 선택 날짜 일정')).toHaveTextContent('선택한 날짜의 일정이 없습니다.');
 
     await userEvent.click(screen.getByRole('button', { name: '주 보기' }));
 
@@ -112,6 +126,7 @@ describe('DashboardPage', () => {
 
     expect(screen.getByRole('button', { name: '목록 보기' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByText('월간 목록')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /월간 마감 상세/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: '전체 캘린더' })).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalledWith(
       '/api/approvals/inbox',

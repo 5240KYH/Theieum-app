@@ -1,10 +1,16 @@
 import { ChangeEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { ShieldCheck, Trash2, X } from 'lucide-react';
+import { Download, ShieldCheck, Trash2, X } from 'lucide-react';
 
 import { useAuth } from '../auth/AuthContext';
 import { applicationStatusLabel, ApprovalStepResponse } from '../applications/applicationTypes';
 import { ApiError } from '../shared/api';
-import { adminApproveStep, getAdminApplications, getApplication, hardDeleteAdminApplication } from './adminApi';
+import {
+  adminApproveStep,
+  downloadMonthlyReceiptAttachments,
+  getAdminApplications,
+  getApplication,
+  hardDeleteAdminApplication
+} from './adminApi';
 import { AdminApplication, findPendingStep } from './adminTypes';
 
 const statusOptions = [
@@ -24,6 +30,12 @@ function errorMessage(error: unknown) {
   return '요청 처리 중 오류가 발생했습니다.';
 }
 
+function currentMonth() {
+  const now = new Date();
+  const month = `${now.getMonth() + 1}`.padStart(2, '0');
+  return `${now.getFullYear()}-${month}`;
+}
+
 export function AdminApplicationsPage() {
   const auth = useAuth();
   const [applications, setApplications] = useState<AdminApplication[]>([]);
@@ -32,9 +44,11 @@ export function AdminApplicationsPage() {
   const [hardDeleteTarget, setHardDeleteTarget] = useState<AdminApplication | null>(null);
   const [pendingStep, setPendingStep] = useState<ApprovalStepResponse | null>(null);
   const [reason, setReason] = useState('');
+  const [downloadMonth, setDownloadMonth] = useState(currentMonth);
   const [isLoading, setLoading] = useState(true);
   const [isApproving, setApproving] = useState(false);
   const [isDeleting, setDeleting] = useState(false);
+  const [isDownloadingAttachments, setDownloadingAttachments] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -188,6 +202,34 @@ export function AdminApplicationsPage() {
     }
   }
 
+  async function handleMonthlyAttachmentDownload() {
+    if (!downloadMonth) {
+      setError('다운로드할 월을 선택해주세요.');
+      return;
+    }
+
+    setDownloadingAttachments(true);
+    setError('');
+    setMessage('');
+
+    try {
+      const blob = await downloadMonthlyReceiptAttachments(downloadMonth);
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = `receipt-attachments-${downloadMonth}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+      setMessage(`${downloadMonth} 첨부파일 다운로드를 시작했습니다.`);
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+    } finally {
+      setDownloadingAttachments(false);
+    }
+  }
+
   return (
     <section className="page-section" aria-labelledby="page-title">
       <div className="page-header">
@@ -208,6 +250,28 @@ export function AdminApplicationsPage() {
               ))}
             </select>
           </label>
+          {auth.hasRole('ADMIN') ? (
+            <div className="row-actions monthly-download-actions">
+              <label className="inline-field">
+                첨부 다운로드 월
+                <input
+                  aria-label="첨부 다운로드 월"
+                  type="month"
+                  value={downloadMonth}
+                  onChange={(event) => setDownloadMonth(event.target.value)}
+                />
+              </label>
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={isDownloadingAttachments}
+                onClick={() => void handleMonthlyAttachmentDownload()}
+              >
+                <Download aria-hidden="true" size={16} />
+                월별 첨부 다운로드
+              </button>
+            </div>
+          ) : null}
         </div>
 
         {error ? <p className="form-error panel-message" role="alert">{error}</p> : null}

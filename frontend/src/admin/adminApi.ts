@@ -1,5 +1,5 @@
 import { getApplication } from '../applications/applicationApi';
-import { api } from '../shared/api';
+import { api, apiBlob } from '../shared/api';
 import {
   AdminApplication,
   AdminApprovalLine,
@@ -170,6 +170,10 @@ export function hardDeleteAdminApprovalOrgException(id: number) {
 
 export function hardDeleteAdminApplication(id: number) {
   return api<void>(`/admin/applications/${id}/hard-delete`, { method: 'DELETE' });
+}
+
+export function downloadMonthlyReceiptAttachments(month: string) {
+  return apiBlob(`/admin/attachments/monthly-download?month=${encodeURIComponent(month)}`);
 }
 
 export { getApplication };

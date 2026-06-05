@@ -218,6 +218,57 @@ describe('AdminApplicationsPage', () => {
     expect(screen.queryByText('택시')).not.toBeInTheDocument();
   });
 
+  it('관리자는 월별 첨부 ZIP을 다운로드할 수 있다', async () => {
+    const createObjectUrl = vi.fn(() => 'blob:monthly-attachments');
+    const revokeObjectUrl = vi.fn();
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: createObjectUrl
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: revokeObjectUrl
+    });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url === '/api/admin/applications') {
+        return new Response(JSON.stringify(adminApplications), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      if (url === '/api/admin/attachments/monthly-download?month=2026-06') {
+        return new Response(new Blob(['zip'], { type: 'application/zip' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/zip' }
+        });
+      }
+
+      return new Response(null, { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: '전체 신청서 관리' });
+    await userEvent.clear(screen.getByLabelText('첨부 다운로드 월'));
+    await userEvent.type(screen.getByLabelText('첨부 다운로드 월'), '2026-06');
+    await userEvent.click(screen.getByRole('button', { name: '월별 첨부 다운로드' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/admin/attachments/monthly-download?month=2026-06',
+        expect.objectContaining({ headers: expect.any(Headers) })
+      );
+    });
+    expect(createObjectUrl).toHaveBeenCalled();
+    expect(anchorClick).toHaveBeenCalled();
+    expect(revokeObjectUrl).toHaveBeenCalledWith('blob:monthly-attachments');
+  });
+
   it('알림 로그에서 채널과 발송 상태를 표시한다', async () => {
     window.history.pushState({}, '', '/admin/notifications');
     vi.stubGlobal(

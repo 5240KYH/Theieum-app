@@ -14,6 +14,7 @@ import { CalendarEvent, CalendarEventInput } from './calendarTypes';
 import {
   addDaysToDateKey,
   dateKey,
+  eventsByDate,
   monthRange,
   toAllDayEndDateInputValue,
   toDateInputValue,
@@ -67,9 +68,10 @@ export function CalendarPage() {
   const [isSaving, setSaving] = useState(false);
 
   const range = useMemo(() => monthRange(currentMonth), [currentMonth]);
+  const groupedEvents = useMemo(() => eventsByDate(events), [events]);
   const selectedEvents = useMemo(
-    () => events.filter((event) => toDateInputValue(event.startAt) === selectedDate),
-    [events, selectedDate]
+    () => groupedEvents.get(selectedDate) ?? [],
+    [groupedEvents, selectedDate]
   );
   const sortedEvents = useMemo(
     () => [...events].sort((first, second) => first.startAt.localeCompare(second.startAt)),

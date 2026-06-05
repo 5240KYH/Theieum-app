@@ -2,9 +2,17 @@
 
 작성 시점: 2026-06-04, Asia/Seoul
 작업 경로: `/Users/kyh/theieum`
-작업 브랜치: `codex/task-15-mobile-pwa-staging`
+삭제 완료 브랜치: `codex/task-15-mobile-pwa-staging` (2026-06-05 원격/로컬 삭제 완료)
 기준 설계: `docs/superpowers/specs/2026-06-04-mobile-pwa-staging-design.md`
 구현 계획: `docs/superpowers/plans/2026-06-04-mobile-pwa-staging-implementation.md`
+
+## 2026-06-05 Git 정리 상태
+
+- Task 15 변경은 Task 16/17 변경과 함께 PR #3으로 `main`에 merge되었다.
+- `main` 최신 커밋은 `56feb60 Merge pull request #3 from 5240KYH/codex/task-15-mobile-pwa-staging`이다.
+- 원격 기본 브랜치는 `main`으로 확인했다.
+- 작업 브랜치 `codex/task-15-mobile-pwa-staging`는 원격/로컬 모두 삭제했다.
+- 현재 이어갈 기준 브랜치는 `main`이다.
 
 ## 완료 범위
 

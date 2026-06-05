@@ -52,6 +52,15 @@ const overnightEventResponse = {
   endAt: '2026-06-11T08:30:00+09:00'
 };
 
+const multiDayAllDayEventResponse = {
+  ...eventResponse,
+  id: 4,
+  title: '워크숍',
+  startAt: '2026-06-10T00:00:00+09:00',
+  endAt: '2026-06-13T00:00:00+09:00',
+  allDay: true
+};
+
 describe('CalendarPage', () => {
   let storage: Storage;
 
@@ -91,7 +100,7 @@ describe('CalendarPage', () => {
         });
       }
       if (url.startsWith('/api/calendar/events')) {
-        return new Response(JSON.stringify([eventResponse]), {
+        return new Response(JSON.stringify([eventResponse, overnightEventResponse, multiDayAllDayEventResponse]), {
           status: 200,
           headers: { 'Content-Type': 'application/json' }
         });
@@ -104,6 +113,11 @@ describe('CalendarPage', () => {
     expect(await screen.findByRole('heading', { name: '공용 캘린더' })).toBeInTheDocument();
     expect((await screen.findAllByText('월간 마감')).length).toBeGreaterThan(0);
     expect(screen.queryByRole('button', { name: '일정 등록' })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: '목록 보기' }));
+
+    expect(screen.queryByRole('button', { name: /월간 마감 상세/ })).not.toBeInTheDocument();
+    expect(screen.getAllByText('영수증 제출 마감').length).toBeGreaterThan(0);
   });
 
   it('월/주/목록 보기와 날짜 셀 일정 칩으로 일정을 빠르게 확인한다', async () => {
@@ -122,7 +136,7 @@ describe('CalendarPage', () => {
         });
       }
       if (url.startsWith('/api/calendar/events')) {
-        return new Response(JSON.stringify([eventResponse]), {
+        return new Response(JSON.stringify([eventResponse, overnightEventResponse, multiDayAllDayEventResponse]), {
           status: 200,
           headers: { 'Content-Type': 'application/json' }
         });
@@ -135,13 +149,23 @@ describe('CalendarPage', () => {
     expect(await screen.findByRole('button', { name: '월 보기' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: '주 보기' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '목록 보기' })).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: /09:00 월간 마감/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /09:00-10:00 월간 마감/ })).toBeInTheDocument();
+    expect(await screen.findByLabelText('모바일 축약: 09:00')).toBeInTheDocument();
+    expect((await screen.findAllByLabelText('모바일 축약: 6/10-6/12')).length).toBeGreaterThan(2);
+    expect((await screen.findAllByRole('button', { name: /6\/10 22:00-6\/11 08:30 야간 점검/ })).length).toBeGreaterThan(1);
+    expect((await screen.findAllByRole('button', { name: /6\/10-6\/12 종일 워크숍/ })).length).toBeGreaterThan(2);
+
+    await userEvent.click(screen.getByRole('button', { name: '2026-06-11 선택' }));
+
+    expect(screen.getByLabelText('선택 날짜 일정')).toHaveTextContent('워크숍');
+    expect(screen.getByLabelText('선택 날짜 일정')).toHaveTextContent('2026-06-10 ~ 2026-06-12 종일');
 
     await userEvent.click(screen.getByRole('button', { name: '주 보기' }));
 
     expect(screen.getByRole('button', { name: '주 보기' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByText('주간 일정')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /월간 마감 상세/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /09:00-10:00 월간 마감/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /월간 마감 상세/ })).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: '목록 보기' }));
 

@@ -1,10 +1,17 @@
 package com.theieum.approval.admin;
 
+import java.io.ByteArrayOutputStream;
+import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -25,6 +32,7 @@ import com.theieum.approval.application.ApplicationHardDeleteService;
 import com.theieum.approval.application.ApplicationRepository;
 import com.theieum.approval.application.ApplicationService;
 import com.theieum.approval.approval.ApprovalStepType;
+import com.theieum.approval.attachment.FileStorage;
 import com.theieum.approval.auth.AuthenticatedUser;
 import com.theieum.approval.notification.NotificationEventRepository;
 
@@ -50,6 +58,7 @@ public class AdminController {
     private final NotificationEventRepository notificationEventRepository;
     private final AdminHardDeleteService adminHardDeleteService;
     private final ApplicationHardDeleteService applicationHardDeleteService;
+    private final FileStorage fileStorage;
 
     public AdminController(
             JdbcTemplate jdbcTemplate,
@@ -58,7 +67,8 @@ public class AdminController {
             ApplicationRepository applicationRepository,
             NotificationEventRepository notificationEventRepository,
             AdminHardDeleteService adminHardDeleteService,
-            ApplicationHardDeleteService applicationHardDeleteService) {
+            ApplicationHardDeleteService applicationHardDeleteService,
+            FileStorage fileStorage) {
         this.jdbcTemplate = jdbcTemplate;
         this.passwordEncoder = passwordEncoder;
         this.applicationService = applicationService;
@@ -66,6 +76,7 @@ public class AdminController {
         this.notificationEventRepository = notificationEventRepository;
         this.adminHardDeleteService = adminHardDeleteService;
         this.applicationHardDeleteService = applicationHardDeleteService;
+        this.fileStorage = fileStorage;
     }
 
     @GetMapping("/users")
@@ -633,6 +644,22 @@ public class AdminController {
         return ResponseEntity.noContent().build();
     }
 
+    @GetMapping("/attachments/monthly-download")
+    @Transactional(readOnly = true)
+    public ResponseEntity<byte[]> monthlyAttachmentDownload(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            String month) {
+        requireAdmin(user);
+        YearMonth targetMonth = parseYearMonth(month);
+        byte[] zipBytes = buildMonthlyAttachmentZip(targetMonth);
+        return ResponseEntity.ok()
+                .header(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"receipt-attachments-" + targetMonth + ".zip\"")
+                .contentType(MediaType.parseMediaType("application/zip"))
+                .body(zipBytes);
+    }
+
     @GetMapping("/notification-events")
     @Transactional(readOnly = true)
     public List<AdminNotificationEventResponse> notificationEvents(@AuthenticationPrincipal AuthenticatedUser user) {
@@ -641,6 +668,71 @@ public class AdminController {
                 .stream()
                 .map(AdminNotificationEventResponse::from)
                 .toList();
+    }
+
+    private YearMonth parseYearMonth(String month) {
+        if (month == null || month.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "month is required");
+        }
+
+        try {
+            return YearMonth.parse(month);
+        } catch (RuntimeException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "month must be YYYY-MM", ex);
+        }
+    }
+
+    private byte[] buildMonthlyAttachmentZip(YearMonth targetMonth) {
+        LocalDate startDate = targetMonth.atDay(1);
+        LocalDate endDate = targetMonth.plusMonths(1).atDay(1);
+        List<Map<String, Object>> attachments = jdbcTemplate.queryForList(
+                """
+                select a.id as attachment_id,
+                       a.application_id,
+                       a.original_filename,
+                       a.file_path,
+                       app.receipt_date,
+                       app.vendor
+                from attachments a
+                join applications app on app.id = a.application_id
+                where app.receipt_date >= ?
+                  and app.receipt_date < ?
+                order by app.receipt_date asc, app.id asc, a.id asc
+                """,
+                startDate,
+                endDate);
+
+        try {
+            ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
+            try (ZipOutputStream zipOutputStream = new ZipOutputStream(byteStream)) {
+                for (Map<String, Object> attachment : attachments) {
+                    String entryName = monthlyAttachmentEntryName(targetMonth, attachment);
+                    zipOutputStream.putNextEntry(new ZipEntry(entryName));
+                    zipOutputStream.write(fileStorage.read((String) attachment.get("file_path")));
+                    zipOutputStream.closeEntry();
+                }
+            }
+            return byteStream.toByteArray();
+        } catch (java.io.IOException ex) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Unable to build attachment zip", ex);
+        }
+    }
+
+    private String monthlyAttachmentEntryName(YearMonth targetMonth, Map<String, Object> attachment) {
+        long applicationId = ((Number) attachment.get("application_id")).longValue();
+        long attachmentId = ((Number) attachment.get("attachment_id")).longValue();
+        String receiptDate = String.valueOf(attachment.get("receipt_date"));
+        String vendor = safeZipName((String) attachment.get("vendor"));
+        String originalFilename = safeZipName((String) attachment.get("original_filename"));
+        return targetMonth + "/application-" + applicationId + "/"
+                + receiptDate + "-" + vendor + "-" + attachmentId + "-" + originalFilename;
+    }
+
+    private String safeZipName(String value) {
+        if (value == null || value.isBlank()) {
+            return "unnamed";
+        }
+        return value.replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]+", "_").trim();
     }
 
     private List<ApprovalLineStepResponse> approvalLineSteps(long approvalLineId) {

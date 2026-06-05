@@ -67,6 +67,22 @@ class ApprovalActionTest {
     }
 
     @Test
+    void futureApproverCannotActBeforeCurrentPendingStep() {
+        long applicationId = submitMultiApproverApplication();
+        long secondStepId = stepId(applicationId, 2);
+
+        assertThatThrownBy(() -> applicationService.approve(secondStepId, 4L, "차례 전 승인"))
+                .isInstanceOf(WorkflowConflictException.class)
+                .hasMessageContaining("Only the current approval step can be processed");
+
+        assertThat(applicationStatus(applicationId)).isEqualTo("IN_APPROVAL");
+        assertThat(stepStatus(applicationId, 1)).isEqualTo("PENDING");
+        assertThat(stepStatus(applicationId, 2)).isEqualTo("PENDING");
+        assertThat(histories(applicationId)).isEmpty();
+        assertThat(notifications(applicationId)).hasSize(1);
+    }
+
+    @Test
     void lastApprovalCompletesApplicationAndNotifiesApplicant() {
         long applicationId = submitDefaultApplication();
         long stepId = stepId(applicationId, 1);
@@ -93,6 +109,22 @@ class ApprovalActionTest {
                 .containsEntry("notification_type", "APPLICATION_APPROVED")
                 .containsEntry("channel", "IN_APP")
                 .containsEntry("status", "CREATED");
+    }
+
+    @Test
+    void approvedApplicationCannotBeRejectedAfterCompletion() {
+        long applicationId = submitDefaultApplication();
+        long stepId = stepId(applicationId, 1);
+        applicationService.approve(stepId, 18L, "승인합니다");
+
+        assertThatThrownBy(() -> applicationService.reject(stepId, 18L, "완료 후 반려"))
+                .isInstanceOf(WorkflowConflictException.class)
+                .hasMessageContaining("Only in-approval applications can be approved");
+
+        assertThat(applicationStatus(applicationId)).isEqualTo("APPROVED");
+        assertThat(stepStatus(applicationId, 1)).isEqualTo("APPROVED");
+        assertThat(histories(applicationId)).hasSize(1);
+        assertThat(notifications(applicationId)).hasSize(2);
     }
 
     @Test
@@ -126,6 +158,22 @@ class ApprovalActionTest {
     }
 
     @Test
+    void rejectedApplicationCannotBeApprovedAfterCompletion() {
+        long applicationId = submitDefaultApplication();
+        long stepId = stepId(applicationId, 1);
+        applicationService.reject(stepId, 18L, "영수증 금액이 맞지 않습니다");
+
+        assertThatThrownBy(() -> applicationService.approve(stepId, 18L, "반려 후 승인"))
+                .isInstanceOf(WorkflowConflictException.class)
+                .hasMessageContaining("Only in-approval applications can be approved");
+
+        assertThat(applicationStatus(applicationId)).isEqualTo("REJECTED");
+        assertThat(stepStatus(applicationId, 1)).isEqualTo("REJECTED");
+        assertThat(histories(applicationId)).hasSize(1);
+        assertThat(notifications(applicationId)).hasSize(2);
+    }
+
+    @Test
     void adminOverrideRequiresReasonAndRecordsOriginalApprover() {
         long applicationId = submitDefaultApplication();
         long stepId = stepId(applicationId, 1);
@@ -148,6 +196,28 @@ class ApprovalActionTest {
                 .containsEntry("actor_id", 1L)
                 .containsEntry("admin_override", true)
                 .containsEntry("admin_reason", "결재자 부재로 관리자 예외 승인");
+    }
+
+    @Test
+    void managerOverrideRecordsOriginalApproverAndManagerActor() {
+        long managerId = createRoleTestUser("process-manager", "MANAGER,APPLICANT");
+        long applicationId = submitDefaultApplication();
+        long stepId = stepId(applicationId, 1);
+
+        applicationService.adminApprove(stepId, managerId, "결재자 부재로 매니저 예외 승인");
+
+        assertThat(applicationStatus(applicationId)).isEqualTo("APPROVED");
+        assertThat(stepStatus(applicationId, 1)).isEqualTo("ADMIN_APPROVED");
+
+        List<Map<String, Object>> histories = histories(applicationId);
+        assertThat(histories).hasSize(1);
+        assertThat(histories.getFirst())
+                .containsEntry("approval_step_id", stepId)
+                .containsEntry("action", "ADMIN_APPROVED")
+                .containsEntry("original_approver_id", 18L)
+                .containsEntry("actor_id", managerId)
+                .containsEntry("admin_override", true)
+                .containsEntry("admin_reason", "결재자 부재로 매니저 예외 승인");
     }
 
     @Test
@@ -227,6 +297,29 @@ class ApprovalActionTest {
         attachDefaultPng(application.getId());
         applicationService.submit(application.getId(), 3L);
         return application.getId();
+    }
+
+    private long createRoleTestUser(String loginId, String roles) {
+        return jdbcTemplate.queryForObject(
+                """
+                insert into users (
+                    login_id,
+                    external_subject,
+                    password_hash,
+                    name,
+                    email,
+                    organization_id,
+                    position_id,
+                    roles,
+                    active
+                ) values (?, null, 'test-password-hash', ?, ?, 3, 1, ?, true)
+                returning id
+                """,
+                Long.class,
+                loginId,
+                loginId,
+                loginId + "@theieum.local",
+                roles);
     }
 
     private long nextId(String tableName) {

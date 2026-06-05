@@ -45,7 +45,17 @@ insert into users (
     (17, 'support03', null, '$2a$10$8X8CxGxCQq6asM.KWSKYh.rhJaTdPC23Jh8pa7EnojSDCFDIB5xNW', '지원03', 'support03@theieum.local', 2, 3, 'APPLICANT', true),
     (18, 'lead-dev', null, '$2a$10$8X8CxGxCQq6asM.KWSKYh.rhJaTdPC23Jh8pa7EnojSDCFDIB5xNW', '개발팀장', 'lead-dev@theieum.local', 3, 4, 'APPROVER,APPLICANT', true),
     (19, 'lead-sales', null, '$2a$10$8X8CxGxCQq6asM.KWSKYh.rhJaTdPC23Jh8pa7EnojSDCFDIB5xNW', '영업팀장', 'lead-sales@theieum.local', 4, 4, 'APPROVER,APPLICANT', true),
-    (20, 'ceo', null, '$2a$10$8X8CxGxCQq6asM.KWSKYh.rhJaTdPC23Jh8pa7EnojSDCFDIB5xNW', '대표', 'ceo@theieum.local', 1, 5, 'APPROVER', true);
+    (20, 'ceo', null, '$2a$10$8X8CxGxCQq6asM.KWSKYh.rhJaTdPC23Jh8pa7EnojSDCFDIB5xNW', '대표', 'ceo@theieum.local', 1, 5, 'APPROVER', true),
+    (21, 'trial-applicant01', null, '$2a$10$8X8CxGxCQq6asM.KWSKYh.rhJaTdPC23Jh8pa7EnojSDCFDIB5xNW', '체험신청자01', 'trial-applicant01@theieum.local', 2, 1, 'APPLICANT', true),
+    (22, 'trial-applicant02', null, '$2a$10$8X8CxGxCQq6asM.KWSKYh.rhJaTdPC23Jh8pa7EnojSDCFDIB5xNW', '체험신청자02', 'trial-applicant02@theieum.local', 2, 2, 'APPLICANT', true),
+    (23, 'trial-applicant03', null, '$2a$10$8X8CxGxCQq6asM.KWSKYh.rhJaTdPC23Jh8pa7EnojSDCFDIB5xNW', '체험신청자03', 'trial-applicant03@theieum.local', 3, 1, 'APPLICANT', true),
+    (24, 'trial-applicant04', null, '$2a$10$8X8CxGxCQq6asM.KWSKYh.rhJaTdPC23Jh8pa7EnojSDCFDIB5xNW', '체험신청자04', 'trial-applicant04@theieum.local', 3, 2, 'APPLICANT', true),
+    (25, 'trial-applicant05', null, '$2a$10$8X8CxGxCQq6asM.KWSKYh.rhJaTdPC23Jh8pa7EnojSDCFDIB5xNW', '체험신청자05', 'trial-applicant05@theieum.local', 4, 1, 'APPLICANT', true),
+    (26, 'trial-applicant06', null, '$2a$10$8X8CxGxCQq6asM.KWSKYh.rhJaTdPC23Jh8pa7EnojSDCFDIB5xNW', '체험신청자06', 'trial-applicant06@theieum.local', 4, 2, 'APPLICANT', true),
+    (27, 'trial-approver01', null, '$2a$10$8X8CxGxCQq6asM.KWSKYh.rhJaTdPC23Jh8pa7EnojSDCFDIB5xNW', '체험결재자01', 'trial-approver01@theieum.local', 2, 4, 'APPROVER,APPLICANT', true),
+    (28, 'trial-approver02', null, '$2a$10$8X8CxGxCQq6asM.KWSKYh.rhJaTdPC23Jh8pa7EnojSDCFDIB5xNW', '체험결재자02', 'trial-approver02@theieum.local', 4, 4, 'APPROVER,APPLICANT', true),
+    (29, 'trial-manager01', null, '$2a$10$8X8CxGxCQq6asM.KWSKYh.rhJaTdPC23Jh8pa7EnojSDCFDIB5xNW', '체험매니저01', 'trial-manager01@theieum.local', 1, 5, 'MANAGER,APPROVER,APPLICANT', true),
+    (30, 'trial-admin01', null, '$2a$10$8X8CxGxCQq6asM.KWSKYh.rhJaTdPC23Jh8pa7EnojSDCFDIB5xNW', '체험관리자01', 'trial-admin01@theieum.local', 1, 5, 'ADMIN,APPROVER,APPLICANT', true);
 
 insert into approval_lines (id, approval_type_id, name, active) values
     (1, 1, '영수증 첨부 신청 기본 결재선', true);

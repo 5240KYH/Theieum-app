@@ -71,15 +71,19 @@ class ApprovalLineResolverTest {
     @Test
     void organizationPositionStepUsesPositionOrder() {
         long approvalTypeId = 102L;
+        insertOrganization(120L, "조직 직위 정렬 테스트팀", 1L, 2, 120);
+        insertUser(120L, "org-position-member-1", "조직직위1", 120L, 1L);
+        insertUser(121L, "org-position-member-2", "조직직위2", 120L, 1L);
+        insertUser(122L, "org-position-member-3", "조직직위3", 120L, 1L);
         insertApprovalType(approvalTypeId, "조직 직위 정렬 테스트");
         insertApprovalLine(102L, approvalTypeId, "조직 직위 결재선");
         insertOrgPositionStep(103L, 102L, 1, 1L);
 
-        List<ResolvedApprover> approvers = resolver.resolve(approvalTypeId, 3L);
+        List<ResolvedApprover> approvers = resolver.resolve(approvalTypeId, 120L);
 
         assertThat(approvers)
                 .extracting(ResolvedApprover::userId)
-                .containsExactly(3L, 4L, 8L);
+                .containsExactly(120L, 121L, 122L);
         assertThat(approvers)
                 .extracting(ResolvedApprover::stepOrder)
                 .containsExactly(1, 1, 1);
@@ -94,33 +98,38 @@ class ApprovalLineResolverTest {
     @Test
     void parentOrganizationScopeUsesImmediateParentOrganization() {
         long approvalTypeId = 106L;
-        insertOrganization(30L, "개발1파트", 3L, 3, 10);
-        insertUser(30L, "part-member", "파트원", 30L, 1L);
+        insertOrganization(130L, "상위 조직 테스트팀", 1L, 2, 130);
+        insertOrganization(131L, "하위 조직 테스트파트", 130L, 3, 10);
+        insertUser(130L, "parent-team-lead", "상위팀장", 130L, 4L);
+        insertUser(131L, "part-member", "파트원", 131L, 1L);
         insertApprovalType(approvalTypeId, "상위 조직 결재선 테스트");
         insertApprovalLine(107L, approvalTypeId, "상위 조직 팀장 결재선");
         insertOrgPositionStep(110L, 107L, 1, "PARENT_ORG", 4L);
 
-        List<ResolvedApprover> approvers = resolver.resolve(approvalTypeId, 30L);
+        List<ResolvedApprover> approvers = resolver.resolve(approvalTypeId, 131L);
 
         assertThat(approvers)
                 .extracting(ResolvedApprover::userId)
-                .containsExactly(18L);
+                .containsExactly(130L);
     }
 
     @Test
     void rootOrganizationScopeUsesTopLevelOrganizationFromAnyDepth() {
         long approvalTypeId = 107L;
-        insertOrganization(31L, "개발2파트", 3L, 3, 20);
-        insertUser(31L, "part-member-root", "파트원2", 31L, 1L);
+        insertOrganization(140L, "최상위 조직 테스트본부", null, 1, 140);
+        insertOrganization(141L, "최상위 조직 테스트팀", 140L, 2, 10);
+        insertOrganization(142L, "최상위 조직 테스트파트", 141L, 3, 10);
+        insertUser(140L, "root-representative", "최상위대표", 140L, 5L);
+        insertUser(142L, "part-member-root", "파트원2", 142L, 1L);
         insertApprovalType(approvalTypeId, "최상위 조직 결재선 테스트");
         insertApprovalLine(108L, approvalTypeId, "최상위 조직 대표 결재선");
         insertOrgPositionStep(111L, 108L, 1, "ROOT_ORG", 5L);
 
-        List<ResolvedApprover> approvers = resolver.resolve(approvalTypeId, 31L);
+        List<ResolvedApprover> approvers = resolver.resolve(approvalTypeId, 142L);
 
         assertThat(approvers)
                 .extracting(ResolvedApprover::userId)
-                .containsExactly(1L, 20L);
+                .containsExactly(140L);
     }
 
     @Test

@@ -34,6 +34,7 @@ export function ApplicationDetailPage() {
   const [isDeleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [error, setError] = useState('');
+  const [previewAttachment, setPreviewAttachment] = useState<{ attachment: AttachmentResponse; previewUrl: string } | null>(null);
 
   async function loadApplication() {
     if (!id) {
@@ -180,6 +181,7 @@ export function ApplicationDetailPage() {
                       key={attachment.id}
                       applicationId={application.id}
                       attachment={attachment}
+                      onOpenPreview={setPreviewAttachment}
                     />
                   ))}
                 </div>
@@ -322,16 +324,42 @@ export function ApplicationDetailPage() {
           </div>
         </div>
       ) : null}
+
+      {previewAttachment ? (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="첨부 이미지 확대 보기">
+          <div className="preview-modal">
+            <div className="table-toolbar">
+              <strong>{previewAttachment.attachment.originalFilename}</strong>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="닫기"
+                onClick={() => setPreviewAttachment(null)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="preview-canvas">
+              <img
+                src={previewAttachment.previewUrl}
+                alt={`${previewAttachment.attachment.originalFilename} 확대 미리보기`}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
 
 function AttachmentPreview({
   applicationId,
-  attachment
+  attachment,
+  onOpenPreview
 }: {
   applicationId: number;
   attachment: AttachmentResponse;
+  onOpenPreview: (preview: { attachment: AttachmentResponse; previewUrl: string }) => void;
 }) {
   const [previewUrl, setPreviewUrl] = useState('');
   const [error, setError] = useState('');
@@ -363,13 +391,19 @@ function AttachmentPreview({
 
   return (
     <figure className="attachment-preview">
-      <div className="attachment-thumb">
+      <button
+        className="attachment-thumb attachment-thumb-button"
+        type="button"
+        aria-label={`${attachment.originalFilename} 크게 보기`}
+        disabled={!previewUrl}
+        onClick={() => onOpenPreview({ attachment, previewUrl })}
+      >
         {previewUrl ? (
           <img src={previewUrl} alt={`${attachment.originalFilename} 미리보기`} />
         ) : (
           <FileImage aria-hidden="true" size={28} />
         )}
-      </div>
+      </button>
       <figcaption>
         <strong>{attachment.originalFilename}</strong>
         <span>{formatFileSize(attachment.fileSize)}</span>

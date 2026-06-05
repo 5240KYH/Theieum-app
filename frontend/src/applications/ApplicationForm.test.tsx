@@ -162,19 +162,22 @@ describe('ApplicationForm', () => {
     expect(screen.getByRole('button', { name: '제출' }).closest('.mobile-sticky-actions')).not.toBeNull();
   });
 
-  it('이미지 첨부 후 썸네일과 삭제 버튼을 표시한다', async () => {
+  it('여러 이미지 첨부 후 썸네일과 개별 삭제 버튼을 표시한다', async () => {
     vi.stubGlobal('fetch', vi.fn());
     render(<App />);
 
-    const file = new File(['receipt'], 'receipt.png', { type: 'image/png' });
-    await userEvent.upload(screen.getByLabelText('영수증 이미지 첨부'), file);
+    const firstFile = new File(['receipt'], 'receipt.png', { type: 'image/png' });
+    const secondFile = new File(['receipt2'], 'receipt-2.png', { type: 'image/png' });
+    await userEvent.upload(screen.getByLabelText('영수증 이미지 첨부'), [firstFile, secondFile]);
 
     expect(screen.getByAltText('receipt.png 미리보기')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '첨부 삭제' })).toBeInTheDocument();
+    expect(screen.getByAltText('receipt-2.png 미리보기')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'receipt.png 첨부 삭제' })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: '첨부 삭제' }));
+    await userEvent.click(screen.getByRole('button', { name: 'receipt.png 첨부 삭제' }));
 
     expect(screen.queryByAltText('receipt.png 미리보기')).not.toBeInTheDocument();
+    expect(screen.getByAltText('receipt-2.png 미리보기')).toBeInTheDocument();
   });
 
   it('제출 성공 후 내 신청서 상세로 이동한다', async () => {
@@ -191,11 +194,12 @@ describe('ApplicationForm', () => {
       if (url === '/api/applications/100/attachments' && init?.method === 'POST') {
         expect(init.body).toBeInstanceOf(FormData);
         expect((init.body as FormData).get('file')).toBeInstanceOf(File);
+        const uploadedFile = (init.body as FormData).get('file') as File;
         return new Response(JSON.stringify({
           id: 501,
-          originalFilename: 'receipt.png',
+          originalFilename: uploadedFile.name,
           mimeType: 'image/png',
-          fileSize: 7
+          fileSize: uploadedFile.size
         }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' }
@@ -230,7 +234,10 @@ describe('ApplicationForm', () => {
     await userEvent.type(screen.getByLabelText('신청 내용'), '회의 준비 문구류 구입');
     await userEvent.upload(
       screen.getByLabelText('영수증 이미지 첨부'),
-      new File(['receipt'], 'receipt.png', { type: 'image/png' })
+      [
+        new File(['receipt'], 'receipt.png', { type: 'image/png' }),
+        new File(['receipt-2'], 'receipt-2.png', { type: 'image/png' })
+      ]
     );
 
     await userEvent.click(screen.getByRole('button', { name: '제출' }));
@@ -239,6 +246,8 @@ describe('ApplicationForm', () => {
       expect(window.location.pathname).toBe('/applications/100');
     });
     expect(await screen.findByRole('heading', { name: '신청서 상세' })).toBeInTheDocument();
+    const attachmentCalls = fetchMock.mock.calls.filter(([input]) => String(input) === '/api/applications/100/attachments');
+    expect(attachmentCalls).toHaveLength(2);
     expect(fetchMock).toHaveBeenCalledWith('/api/applications/100/submit', expect.objectContaining({
       method: 'POST'
     }));

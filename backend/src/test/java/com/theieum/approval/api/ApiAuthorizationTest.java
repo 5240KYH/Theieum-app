@@ -4,13 +4,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,7 +43,8 @@ import com.theieum.approval.common.TestDatabaseHarness;
         "spring.flyway.clean-disabled=false",
         "spring.flyway.locations=classpath:db/migration,classpath:db/seed",
         "app.security.jwt-secret=test-jwt-secret-that-is-long-enough-for-hmac",
-        "app.file-storage.root-path=/private/tmp/theieum-approval-test"
+        "app.file-storage.root-path=/private/tmp/theieum-approval-test",
+        "app.attachments.max-image-bytes=8"
 })
 @AutoConfigureMockMvc
 class ApiAuthorizationTest {
@@ -270,6 +277,84 @@ class ApiAuthorizationTest {
                         attachmentId)
                         .header("Authorization", bearer(otherApplicantToken)))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void futureApproverCanReadApplicationAndAttachmentOnlyAfterTheirTurnStarts() throws Exception {
+        long applicationId = submitApplication(9L, 1L);
+        long attachmentId = attachmentId(applicationId);
+        String currentApproverToken = login("approver01");
+        String futureApproverToken = login("lead-sales");
+
+        mockMvc.perform(get("/api/applications/{id}", applicationId)
+                        .header("Authorization", bearer(currentApproverToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(applicationId));
+
+        mockMvc.perform(get("/api/applications/{id}", applicationId)
+                        .header("Authorization", bearer(futureApproverToken)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/applications/{applicationId}/attachments/{attachmentId}/content",
+                        applicationId,
+                        attachmentId)
+                        .header("Authorization", bearer(futureApproverToken)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/approvals/steps/{stepId}/approve", stepId(applicationId, 1))
+                        .header("Authorization", bearer(currentApproverToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "comment": "1차 승인"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/applications/{id}", applicationId)
+                        .header("Authorization", bearer(futureApproverToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(applicationId));
+
+        mockMvc.perform(get("/api/applications/{applicationId}/attachments/{attachmentId}/content",
+                        applicationId,
+                        attachmentId)
+                        .header("Authorization", bearer(futureApproverToken)))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(pngBytes()));
+
+        mockMvc.perform(post("/api/approvals/steps/{stepId}/approve", stepId(applicationId, 2))
+                        .header("Authorization", bearer(futureApproverToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "comment": "2차 승인"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_APPROVAL"));
+    }
+
+    @Test
+    void notificationReadCanOnlyBeMarkedByRecipient() throws Exception {
+        long applicationId = submitApplication(3L, 1L);
+        long notificationId = notificationId(applicationId, 18L);
+        String applicantToken = login("employee01");
+        String approverToken = login("lead-dev");
+
+        mockMvc.perform(patch("/api/notifications/{id}/read", notificationId)
+                        .header("Authorization", bearer(applicantToken)))
+                .andExpect(status().isForbidden());
+
+        assertThat(notificationReadFlag(notificationId)).isFalse();
+
+        mockMvc.perform(patch("/api/notifications/{id}/read", notificationId)
+                        .header("Authorization", bearer(approverToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(notificationId))
+                .andExpect(jsonPath("$.read").value(true));
+
+        assertThat(notificationReadFlag(notificationId)).isTrue();
     }
 
     @Test
@@ -871,7 +956,33 @@ class ApiAuthorizationTest {
     }
 
     @Test
-    void receiptAttachmentRejectsOversizedImages() throws Exception {
+    void terminalApplicationsCannotBeHardDeletedThroughApplicantOrAdminApis() throws Exception {
+        long approvedApplicationId = submitApplication(3L, 1L);
+        applicationService.approve(stepId(approvedApplicationId, 1), 18L, "승인합니다");
+        long rejectedApplicationId = submitApplication(3L, 1L);
+        applicationService.reject(stepId(rejectedApplicationId, 1), 18L, "반려합니다");
+        String applicantToken = login("employee01");
+        String adminToken = login("admin");
+
+        mockMvc.perform(delete("/api/applications/{id}/hard-delete", approvedApplicationId)
+                        .header("Authorization", bearer(applicantToken)))
+                .andExpect(status().isConflict());
+        mockMvc.perform(delete("/api/admin/applications/{id}/hard-delete", approvedApplicationId)
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isConflict());
+        mockMvc.perform(delete("/api/applications/{id}/hard-delete", rejectedApplicationId)
+                        .header("Authorization", bearer(applicantToken)))
+                .andExpect(status().isConflict());
+        mockMvc.perform(delete("/api/admin/applications/{id}/hard-delete", rejectedApplicationId)
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isConflict());
+
+        assertThat(rowCount("applications", approvedApplicationId)).isOne();
+        assertThat(rowCount("applications", rejectedApplicationId)).isOne();
+    }
+
+    @Test
+    void receiptAttachmentRejectsImagesLargerThanConfiguredLimit() throws Exception {
         Application application = applicationService.createDraft(new ApplicationService.CreateDraftCommand(
                 3L,
                 1L,
@@ -881,18 +992,57 @@ class ApiAuthorizationTest {
                 new BigDecimal("12500.00"),
                 "점심 식대"));
         String applicantToken = login("employee01");
-        byte[] oversizedPng = new byte[5 * 1024 * 1024 + 9];
-        System.arraycopy(pngBytes(), 0, oversizedPng, 0, pngBytes().length);
         MockMultipartFile file = new MockMultipartFile(
                 "file",
                 "large-receipt.png",
                 "image/png",
-                oversizedPng);
+                pngBytes());
 
         mockMvc.perform(multipart("/api/applications/{id}/attachments", application.getId())
                         .file(file)
                         .header("Authorization", bearer(applicantToken)))
                 .andExpect(status().isPayloadTooLarge());
+    }
+
+    @Test
+    void adminCanDownloadMonthlyReceiptAttachmentZip() throws Exception {
+        long juneApplicationId = createSubmittedApplication(3L, LocalDate.of(2026, 6, 2), "문구점");
+        long julyApplicationId = createSubmittedApplication(3L, LocalDate.of(2026, 7, 1), "카페");
+        String adminToken = login("admin");
+
+        byte[] zipBytes = mockMvc.perform(get("/api/admin/attachments/monthly-download")
+                        .param("month", "2026-06")
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertThat(result.getResponse().getContentType()).isEqualTo("application/zip"))
+                .andExpect(result -> assertThat(result.getResponse().getHeader("Content-Disposition"))
+                        .contains("receipt-attachments-2026-06.zip"))
+                .andReturn()
+                .getResponse()
+                .getContentAsByteArray();
+
+        List<String> entries = zipEntryNames(zipBytes);
+        assertThat(entries)
+                .anySatisfy(entry -> {
+                    assertThat(entry).contains("2026-06/application-" + juneApplicationId + "/");
+                    assertThat(entry).contains("문구점");
+                    assertThat(entry).contains("receipt.png");
+                });
+        assertThat(entries)
+                .noneMatch(entry -> entry.contains("application-" + julyApplicationId + "/"));
+    }
+
+    @Test
+    void managerCannotDownloadMonthlyReceiptAttachmentZip() throws Exception {
+        long managerId = createRoleTestUser("monthly-download-manager", "MANAGER");
+        String managerToken = login("monthly-download-manager");
+
+        mockMvc.perform(get("/api/admin/attachments/monthly-download")
+                        .param("month", "2026-06")
+                        .header("Authorization", bearer(managerToken)))
+                .andExpect(status().isForbidden());
+
+        assertThat(rowCount("users", managerId)).isOne();
     }
 
     private long submitApplication(long applicantId, long approvalTypeId) {
@@ -904,6 +1054,25 @@ class ApiAuthorizationTest {
                 "테스트 상점",
                 new BigDecimal("12500.00"),
                 "점심 식대"));
+        applicationService.attachReceiptImage(
+                application.getId(),
+                applicantId,
+                "receipt.png",
+                "image/png",
+                pngBytes());
+        applicationService.submit(application.getId(), applicantId);
+        return application.getId();
+    }
+
+    private long createSubmittedApplication(long applicantId, LocalDate receiptDate, String vendor) {
+        Application application = applicationService.createDraft(new ApplicationService.CreateDraftCommand(
+                applicantId,
+                1L,
+                receiptDate.plusDays(1),
+                receiptDate,
+                vendor,
+                new BigDecimal("12500.00"),
+                "월별 다운로드 테스트"));
         applicationService.attachReceiptImage(
                 application.getId(),
                 applicantId,
@@ -1068,6 +1237,38 @@ class ApiAuthorizationTest {
                 """,
                 Long.class,
                 applicationId);
+    }
+
+    private List<String> zipEntryNames(byte[] zipBytes) throws Exception {
+        List<String> entries = new ArrayList<>();
+        try (ZipInputStream zipInputStream = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
+            ZipEntry entry;
+            while ((entry = zipInputStream.getNextEntry()) != null) {
+                entries.add(entry.getName());
+            }
+        }
+        return entries;
+    }
+
+    private long notificationId(long applicationId, long recipientId) {
+        return jdbcTemplate.queryForObject(
+                """
+                select id
+                from notification_events
+                where application_id = ? and recipient_id = ?
+                order by id asc
+                limit 1
+                """,
+                Long.class,
+                applicationId,
+                recipientId);
+    }
+
+    private boolean notificationReadFlag(long notificationId) {
+        return jdbcTemplate.queryForObject(
+                "select read_flag from notification_events where id = ?",
+                Boolean.class,
+                notificationId);
     }
 
     private byte[] pngBytes() {

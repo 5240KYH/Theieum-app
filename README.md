@@ -6,7 +6,11 @@ Spring Boot, React/Vite, PostgreSQL 기반 전자결재 MVP입니다.
 
 - [관리자 운영 가이드](docs/admin-user-guide.md): 실행, 배포, 관리자 이용, 운영 점검 절차
 - [배포 전 체크리스트](docs/deployment-readiness-checklist.md): 운영 후보 배포 전 확인 항목
+- [스테이징 외부 체험 운영 런북](docs/staging-operations-runbook.md): 서버 준비, secret, HTTPS, 검증, 종료 정리 절차
+- [스테이징 체험 계정과 첨부파일 관리 런북](docs/staging-trial-data-and-attachments.md): 30명 안팎 체험 계정 풀, 첨부 정책, 종료 정리 절차
+- [Oracle Always Free 스테이징 배포 런북](docs/oracle-free-staging-runbook.md): 무료 VM 기반 외부 체험 서버 구성, HTTPS, 보안 점검
 - [외부 체험자 가이드](docs/staging-test-guide.md): 스테이징 URL, 테스트 계정, 모바일 체험 시나리오 안내
+- [스테이징 체험 계정 전달 양식](docs/staging-tester-account-packet.md): 체험자별 계정 전달 문구와 역할별 시나리오
 - [반려 재상신 구현 계획](docs/superpowers/plans/2026-06-03-rejected-application-resubmission.md): 반려 신청서 재상신 후속 구현 plan
 
 ## 로컬 실행
@@ -64,8 +68,14 @@ docker compose --env-file .env.staging -f docker-compose.staging.yml up --build 
 | 기안자 | `employee01` | `password` |
 | 개발팀 결재자 | `lead-dev` | `password` |
 | 결재자 | `approver01` | `password` |
+| 체험 신청자 | `trial-applicant01` ~ `trial-applicant06` | `password` |
+| 체험 결재자 | `trial-approver01`, `trial-approver02` | `password` |
+| 체험 매니저 | `trial-manager01` | `password` |
+| 체험 관리자 | `trial-admin01` | `password` |
 
 기본 E2E 흐름은 개발팀 기안자인 `employee01`이 신청하고, 개발팀 예외 결재선에 따라 `lead-dev`가 승인합니다. `approver01`은 기본 결재선 검증용 결재자 계정입니다.
+
+체험 계정 풀과 첨부파일 운영 정책은 [스테이징 체험 계정과 첨부파일 관리 런북](docs/staging-trial-data-and-attachments.md)을 기준으로 확인합니다. 기본 첨부 정책은 신청서당 영수증 이미지 최대 10개, 파일당 5MB 이하입니다.
 
 운영 배포 전에는 `docker-compose.yml`의 `JWT_SECRET`, DB 비밀번호, 파일 저장 경로를 환경별 secret으로 교체해야 합니다. `JWT_SECRET`은 애플리케이션이 금지하는 공유 기본값과 달라야 하며, 충분히 긴 난수 문자열을 사용하세요. 현재 frontend 컨테이너는 nginx가 `/api/*` 요청을 backend 컨테이너로 프록시합니다.
 

@@ -3,8 +3,9 @@ import { CalendarDays, ChevronLeft, ChevronRight, MapPin, Pencil, Plus } from 'l
 import { CalendarEvent } from './calendarTypes';
 import {
   dateKey,
+  displayEventChipRange,
+  displayEventMobileMarker,
   displayEventRange,
-  displayTime,
   eventsByDate,
   monthDays,
   monthLabel,
@@ -48,6 +49,7 @@ export function CalendarBoard({
   className?: string;
 }) {
   const groupedEvents = eventsByDate(events);
+  const selectedEvents = groupedEvents.get(selectedDate) ?? [];
   const selectedDateValue = new Date(`${selectedDate}T00:00:00`);
   const sortedEvents = [...events].sort((first, second) => first.startAt.localeCompare(second.startAt));
   const days = viewMode === 'week' ? weekDays(selectedDateValue) : monthDays(currentMonth);
@@ -72,6 +74,12 @@ export function CalendarBoard({
         ].filter(Boolean).join(' ')}
         key={key}
       >
+        <button
+          className="calendar-day-select-hitbox"
+          type="button"
+          aria-label={`${key} 날짜 영역 선택`}
+          onClick={() => onSelectDate(key)}
+        />
         <div className="calendar-day-topline">
           <button
             className="calendar-date-button"
@@ -97,7 +105,9 @@ export function CalendarBoard({
         </div>
         <div className="calendar-chip-list">
           {dayEvents.slice(0, 3).map((event) => {
-            const chipLabel = `${displayTime(event.startAt, event.allDay)} ${event.title}`;
+            const chipRange = displayEventChipRange(event.startAt, event.endAt, event.allDay);
+            const mobileMarker = displayEventMobileMarker(event.startAt, event.endAt, event.allDay);
+            const chipLabel = `${chipRange} ${event.title}`;
             return onOpenEvent ? (
               <button
                 className="calendar-event-chip"
@@ -109,14 +119,26 @@ export function CalendarBoard({
                   onOpenEvent(event);
                 }}
               >
-                <span>{displayTime(event.startAt, event.allDay)}</span>
-                {event.title}
+                <span className="calendar-event-time calendar-event-time-full">{chipRange}</span>
+                <span className="calendar-event-time calendar-event-time-compact" aria-label={`모바일 축약: ${mobileMarker}`}>
+                  {mobileMarker}
+                </span>
+                <span className="calendar-event-title">{event.title}</span>
               </button>
             ) : (
-              <span className="calendar-event-chip static-chip" key={event.id} aria-label={chipLabel}>
-                <span>{displayTime(event.startAt, event.allDay)}</span>
-                {event.title}
-              </span>
+              <button
+                className="calendar-event-chip static-chip"
+                type="button"
+                key={event.id}
+                aria-label={chipLabel}
+                onClick={() => onSelectDate(key)}
+              >
+                <span className="calendar-event-time calendar-event-time-full">{chipRange}</span>
+                <span className="calendar-event-time calendar-event-time-compact" aria-label={`모바일 축약: ${mobileMarker}`}>
+                  {mobileMarker}
+                </span>
+                <span className="calendar-event-title">{event.title}</span>
+              </button>
             );
           })}
           {dayEvents.length > 3 ? <small>+{dayEvents.length - 3}</small> : null}
@@ -126,7 +148,10 @@ export function CalendarBoard({
   }
 
   return (
-    <section className={['calendar-board', className].filter(Boolean).join(' ')} aria-label="공용 캘린더">
+    <section
+      className={['calendar-board', `calendar-board-${viewMode}`, className].filter(Boolean).join(' ')}
+      aria-label="공용 캘린더"
+    >
       <div className="calendar-toolbar">
         <div className="calendar-toolbar-left">
           <button className="secondary-button compact-button" type="button" onClick={onToday}>
@@ -180,6 +205,17 @@ export function CalendarBoard({
           <div className={viewMode === 'week' ? 'calendar-grid week-grid' : 'calendar-grid'}>
             {days.map(renderCalendarDay)}
           </div>
+          <aside className="calendar-mobile-agenda" aria-label="모바일 선택 날짜 일정">
+            <div className="table-toolbar borderless-panel">
+              <strong>{selectedDate} 일정</strong>
+            </div>
+            <EventList
+              events={selectedEvents}
+              canManage={canManage}
+              onEdit={onOpenEvent}
+              emptyText="선택한 날짜의 일정이 없습니다."
+            />
+          </aside>
         </>
       )}
     </section>
@@ -217,11 +253,11 @@ export function EventList({
             ) : null}
             {event.description ? <p>{event.description}</p> : null}
           </div>
-          {onEdit ? (
+          {canManage && onEdit ? (
             <button
               className="icon-button"
               type="button"
-              aria-label={`${event.title} ${canManage ? '수정' : '상세'}`}
+              aria-label={`${event.title} 수정`}
               onClick={() => onEdit(event)}
             >
               <Pencil aria-hidden="true" size={16} />

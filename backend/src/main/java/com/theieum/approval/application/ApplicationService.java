@@ -10,6 +10,7 @@ import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,6 +43,7 @@ public class ApplicationService {
     private final FileStorage fileStorage;
     private final NotificationEventService notificationEventService;
     private final EntityManager entityManager;
+    private final int maxFilesPerApplication;
 
     public ApplicationService(
             ApplicationRepository applicationRepository,
@@ -51,7 +53,8 @@ public class ApplicationService {
             ApprovalLineResolver approvalLineResolver,
             FileStorage fileStorage,
             NotificationEventService notificationEventService,
-            EntityManager entityManager) {
+            EntityManager entityManager,
+            @Value("${app.attachments.max-files-per-application:1}") int maxFilesPerApplication) {
         this.applicationRepository = applicationRepository;
         this.approvalStepRepository = approvalStepRepository;
         this.attachmentRepository = attachmentRepository;
@@ -60,6 +63,7 @@ public class ApplicationService {
         this.fileStorage = fileStorage;
         this.notificationEventService = notificationEventService;
         this.entityManager = entityManager;
+        this.maxFilesPerApplication = maxFilesPerApplication;
     }
 
     public Application createDraft(CreateDraftCommand command) {
@@ -158,6 +162,9 @@ public class ApplicationService {
         }
         if (!matchesImageSignature(contentType, bytes)) {
             throw new IllegalArgumentException("Receipt attachment content does not match image type");
+        }
+        if (attachmentRepository.countByApplicationId(applicationId) >= maxFilesPerApplication) {
+            throw new WorkflowConflictException("Receipt attachment limit exceeded");
         }
 
         StoredFile storedFile = fileStorage.store(originalFilename, contentType, bytes);

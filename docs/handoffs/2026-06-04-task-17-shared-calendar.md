@@ -2,7 +2,15 @@
 
 작성일: 2026-06-04, Asia/Seoul
 작업 경로: `/Users/kyh/theieum`
-현재 브랜치: `codex/task-15-mobile-pwa-staging`
+현재 기준 브랜치: `main`
+
+## 2026-06-05 Git 정리 상태
+
+- Task 17 변경은 Task 15/16 변경과 함께 PR #3으로 `main`에 merge되었다.
+- `main` 최신 커밋은 `56feb60 Merge pull request #3 from 5240KYH/codex/task-15-mobile-pwa-staging`이다.
+- 원격 기본 브랜치는 `main`으로 확인했다.
+- 작업 브랜치 `codex/task-15-mobile-pwa-staging`는 원격/로컬 모두 삭제했다.
+- 현재 이어갈 기준 브랜치는 `main`이다.
 
 ## 목표
 
@@ -231,7 +239,7 @@ docker compose up -d --build frontend
 
 - 호스트 `./gradlew test`는 Java 21 toolchain 부재로 실패한다. 백엔드 테스트는 Docker JDK 21 컨테이너를 사용한다.
 - 이 작업은 기존 실행 중인 Docker 앱의 DB에 새 Flyway migration `V3__create_calendar_events.sql`을 적용한다.
-- 사용자가 명시적으로 요청하기 전까지 `git add`, `git commit`, `git push`는 하지 않는다.
+- 2026-06-05 기준 이 변경은 PR #3으로 `main`에 merge되었다.
 
 ## 다음 후보
 

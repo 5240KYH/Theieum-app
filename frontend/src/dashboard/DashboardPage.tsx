@@ -143,7 +143,6 @@ export function DashboardPage() {
           onToday={goToday}
           onViewModeChange={setCalendarView}
           onSelectDate={setSelectedDate}
-          onOpenEvent={() => undefined}
           className="dashboard-calendar-board"
         />
       </div>

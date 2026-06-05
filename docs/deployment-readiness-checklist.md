@@ -32,7 +32,8 @@
 - [ ] 첨부 이미지 저장 경로가 컨테이너 재배포 후에도 유지되는 영속 저장소인지 확인한다.
 - [ ] 저장소 백업 정책을 DB 백업 정책과 맞춘다.
 - [ ] 파일 접근 권한이 backend 프로세스 외부에 열려 있지 않은지 확인한다.
-- [ ] 업로드 크기 제한과 허용 MIME 타입 정책이 운영 요구와 맞는지 확인한다.
+- [x] 업로드 크기 제한과 허용 MIME 타입 정책이 서버 테스트로 고정되어 있는지 확인한다. (Task 21 backend tests)
+- [x] 신청서당 첨부 개수 제한이 서버 테스트로 고정되어 있는지 확인한다. (Task 21 backend tests)
 
 ## 5. 네트워크와 보안
 
@@ -44,11 +45,11 @@
 
 ## 6. 운영 기능 확인
 
-- [ ] 신청자: 영수증 첨부, 임시저장 수정, 제출, 취소 흐름을 확인한다.
-- [ ] 결재자: 현재 결재함, 승인, 반려 흐름을 확인한다.
+- [x] 신청자: 영수증 첨부, 임시저장 수정, 제출, 취소 흐름을 확인한다. (Task 20 backend tests)
+- [x] 결재자: 현재 결재함, 승인, 반려 흐름을 확인한다. (Task 20 backend tests)
 - [ ] 관리자: 전체 신청서 조회, 예외 결재, 조직별 예외 결재자 조회/생성, 알림 로그 조회를 확인한다.
 - [ ] 신청 상세에서 첨부 이미지 미리보기와 실제 결재 이력이 표시되는지 확인한다.
-- [ ] 권한 없는 사용자가 다른 신청서와 첨부 파일을 조회할 수 없는지 확인한다.
+- [x] 권한 없는 사용자가 다른 신청서와 첨부 파일을 조회할 수 없는지 확인한다. (Task 20 backend tests)
 
 ## 7. 검증 명령
 
@@ -84,14 +85,38 @@ git diff --check
 - [ ] PostgreSQL과 backend 포트가 외부에 직접 공개되지 않는지 확인한다.
 - [ ] HTTPS 접속 URL을 준비한다.
 - [ ] 테스트 계정만 배포하고 실제 개인정보를 넣지 않는다.
+- [x] seed 계정이 30명 안팎 체험을 위한 `trial-*` 계정 풀을 포함하는지 확인한다. (Task 21 backend tests)
 - [ ] 체험 시작 전 기준정보 테스트 데이터는 `비활성화` 또는 `완전 삭제` 정책에 맞게 정리한다.
-- [ ] 사용자, 조직, 직위, 결재선, 예외 결재자의 완전 삭제가 필요한 경우 `ADMIN` 계정으로 참조 차단 메시지를 확인한다.
-- [ ] 신청서는 `임시저장` 또는 `취소` 상태만 본인 또는 `ADMIN`이 완전 삭제할 수 있음을 검증한다.
-- [ ] `결재중`, `승인완료`, `반려` 신청서는 완전 삭제되지 않는지 확인한다.
+- [x] 사용자, 조직, 직위, 결재선, 예외 결재자의 완전 삭제가 필요한 경우 `ADMIN` 계정으로 참조 차단 메시지를 확인한다. (backend tests)
+- [x] 신청서는 `임시저장` 또는 `취소` 상태만 본인 또는 `ADMIN`이 완전 삭제할 수 있음을 검증한다. (Task 20 backend tests)
+- [x] `결재중`, `승인완료`, `반려` 신청서는 완전 삭제되지 않는지 확인한다. (Task 20 backend tests)
 - [ ] 체험자에게 `docs/staging-test-guide.md`를 전달한다.
 - [ ] 테스트 종료 후 DB와 첨부 이미지 volume 보존 또는 삭제 여부를 결정한다.
 
-## 9. 현재 차단/후속 후보
+## 9. 외부 체험 개시 체크리스트
+
+- [ ] `docs/staging-operations-runbook.md` 기준으로 서버와 HTTPS URL을 준비한다.
+- [ ] `scripts/staging-smoke.sh https://approval-staging.example.com`가 통과한다.
+- [ ] `cd e2e && E2E_BASE_URL=https://approval-staging.example.com npm run test -- mobile-pwa-staging.spec.ts`가 통과한다.
+- [ ] 체험자별 계정 전달 문구를 `docs/staging-tester-account-packet.md` 기준으로 준비한다.
+- [ ] 30명 안팎 계정 배정과 첨부파일 정리는 `docs/staging-trial-data-and-attachments.md` 기준으로 준비한다.
+- [ ] 실제 개인정보와 실제 영수증 업로드 금지를 공지한다.
+- [ ] 체험 종료 시 DB와 첨부파일 volume을 보존할지 삭제할지 결정한다.
+
+## 10. Oracle Always Free 외부 체험 서버 체크리스트
+
+- [ ] Oracle Ampere A1 VM을 2 OCPU / 12GB RAM 이상으로 준비한다.
+- [ ] Security List 또는 NSG는 `80`, `443`, 제한된 `22`만 연다.
+- [ ] `3000`, `8080`, `5432`는 외부에서 닫혀 있는지 확인한다.
+- [ ] Caddy가 HTTPS를 받아 `127.0.0.1:3000`으로 reverse proxy한다.
+- [ ] `FRONTEND_HTTP_PORT=127.0.0.1:3000`으로 frontend를 바인딩한다.
+- [ ] GitHub public 유지 여부를 결정한다.
+- [ ] public 유지 시 repo에 secret, `.env.staging`, DB dump, 실제 개인정보, 실제 첨부파일이 없는지 확인한다.
+- [ ] private 전환 시 VM에는 read-only deploy key만 둔다.
+- [ ] `scripts/staging-smoke.sh https://<staging-domain>`이 통과한다.
+- [ ] `cd e2e && E2E_BASE_URL=https://<staging-domain> npm run test -- mobile-pwa-staging.spec.ts`가 통과한다.
+
+## 11. 현재 차단/후속 후보
 
 - [ ] GitHub 원격 push는 현재 로컬 SSH 인증 문제로 실패한다. `git@github.com: Permission denied (publickey)` 해결 후 PR을 생성한다.
 - [ ] 반려 신청서 재상신은 정책 결정 후 별도 구현한다.

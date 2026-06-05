@@ -499,6 +499,12 @@ h1 {
   gap: 10px;
 }
 
+.attachment-preview-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
 .attachment-preview {
   align-items: center;
   border: 1px solid #d9e1ea;
@@ -536,6 +542,21 @@ h1 {
   height: 100%;
   object-fit: cover;
   width: 100%;
+}
+
+.attachment-thumb-button {
+  cursor: pointer;
+  padding: 0;
+}
+
+.attachment-thumb-button:disabled {
+  cursor: wait;
+}
+
+.attachment-thumb-button:focus-visible {
+  box-shadow: 0 0 0 3px rgba(47, 110, 239, 0.22);
+  outline: 2px solid #2f6eef;
+  outline-offset: 2px;
 }
 
 .empty-state {
@@ -618,10 +639,16 @@ h1 {
   gap: 10px;
 }
 
-.inline-field select {
+.inline-field select,
+.inline-field input {
   background: #ffffff;
   min-height: 38px;
   padding: 8px 34px 8px 10px;
+}
+
+.monthly-download-actions {
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .muted-copy {
@@ -1162,7 +1189,19 @@ th {
   min-height: 112px;
   min-width: 0;
   padding: 8px;
+  position: relative;
   text-align: left;
+}
+
+.calendar-day-select-hitbox {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  cursor: pointer;
+  inset: 0;
+  padding: 0;
+  position: absolute;
+  z-index: 0;
 }
 
 .calendar-day:nth-child(7n) {
@@ -1178,6 +1217,9 @@ th {
   display: flex;
   justify-content: space-between;
   min-width: 0;
+  pointer-events: none;
+  position: relative;
+  z-index: 1;
 }
 
 .calendar-date-button,
@@ -1189,6 +1231,7 @@ th {
   color: inherit;
   display: inline-flex;
   justify-content: center;
+  pointer-events: auto;
 }
 
 .calendar-date-button {
@@ -1240,35 +1283,56 @@ th {
   display: grid;
   gap: 4px;
   min-width: 0;
+  pointer-events: none;
+  position: relative;
+  z-index: 1;
 }
 
 .calendar-event-chip {
-  align-items: center;
+  align-items: start;
   background: #e8f2ff;
   border: 1px solid #c9ddff;
   border-radius: 4px;
   color: #174ea6;
-  display: flex;
+  display: grid;
   font-size: 12px;
   font-weight: 800;
-  gap: 5px;
-  min-height: 24px;
+  gap: 3px;
+  grid-template-columns: minmax(0, 1fr);
+  line-height: 1.2;
+  min-height: 48px;
   min-width: 0;
   overflow: hidden;
-  padding: 0 6px;
+  padding: 8px 9px;
+  pointer-events: auto;
   text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.calendar-event-chip span {
+.calendar-event-time {
   color: #526173;
   flex: 0 0 auto;
   font-weight: 700;
+  white-space: nowrap;
+}
+
+.calendar-event-time-compact,
+.calendar-mobile-agenda {
+  display: none;
+}
+
+.calendar-event-title {
+  color: inherit;
+  display: -webkit-box;
+  line-height: 1.25;
+  min-width: 0;
+  overflow: hidden;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .calendar-event-chip.static-chip {
-  cursor: default;
+  cursor: pointer;
 }
 
 .calendar-list-view {
@@ -1697,7 +1761,7 @@ th {
 
   .calendar-day {
     min-height: 88px;
-    padding: 8px 6px;
+    padding: 7px 5px;
   }
 
   .week-grid .calendar-day {
@@ -1715,6 +1779,59 @@ th {
 
   .calendar-event-chip {
     font-size: 11px;
+    gap: 3px;
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 28px;
+    padding: 4px 5px;
+  }
+
+  .calendar-board-month .calendar-event-chip,
+  .calendar-board-week .calendar-event-chip {
+    align-items: center;
+    border-radius: 999px;
+    display: flex;
+    justify-content: center;
+    min-height: 26px;
+    padding: 3px 4px;
+    text-align: center;
+  }
+
+  .calendar-board-month .calendar-event-time-full,
+  .calendar-board-month .calendar-event-title,
+  .calendar-board-week .calendar-event-time-full,
+  .calendar-board-week .calendar-event-title {
+    display: none;
+  }
+
+  .calendar-board-month .calendar-event-time-compact,
+  .calendar-board-week .calendar-event-time-compact {
+    color: #174ea6;
+    display: block;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .calendar-mobile-agenda {
+    background: #ffffff;
+    border-top: 1px solid #e7edf3;
+    display: grid;
+  }
+
+  .calendar-agenda {
+    display: none;
+  }
+
+  .calendar-event-title {
+    display: -webkit-box;
+    line-height: 1.25;
+    overflow: hidden;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
   }
 
   .calendar-modal .form-grid {

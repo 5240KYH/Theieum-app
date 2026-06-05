@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  displayEventChipRange,
+  displayEventMobileMarker,
   displayEventRange,
   toDateInputValue,
   toSeoulDateTimeFromParts,
@@ -14,6 +16,46 @@ describe('calendarUtils', () => {
       '2026-06-10T10:30:00+09:00',
       false
     )).toBe('2026-06-10 09:00~10:30');
+  });
+
+  it('월/주 달력 칩은 종료 시간과 다일 기간을 짧게 표시한다', () => {
+    expect(displayEventChipRange(
+      '2026-06-10T09:00:00+09:00',
+      '2026-06-10T10:30:00+09:00',
+      false
+    )).toBe('09:00-10:30');
+
+    expect(displayEventChipRange(
+      '2026-06-10T22:00:00+09:00',
+      '2026-06-11T08:30:00+09:00',
+      false
+    )).toBe('6/10 22:00-6/11 08:30');
+
+    expect(displayEventChipRange(
+      '2026-06-10T00:00:00+09:00',
+      '2026-06-13T00:00:00+09:00',
+      true
+    )).toBe('6/10-6/12 종일');
+  });
+
+  it('모바일 월/주 달력 칸은 날짜 안에서 읽히는 짧은 표식으로 표시한다', () => {
+    expect(displayEventMobileMarker(
+      '2026-06-10T09:00:00+09:00',
+      '2026-06-10T10:30:00+09:00',
+      false
+    )).toBe('09:00');
+
+    expect(displayEventMobileMarker(
+      '2026-06-10T22:00:00+09:00',
+      '2026-06-11T08:30:00+09:00',
+      false
+    )).toBe('6/10-6/11');
+
+    expect(displayEventMobileMarker(
+      '2026-06-10T00:00:00+09:00',
+      '2026-06-13T00:00:00+09:00',
+      true
+    )).toBe('6/10-6/12');
   });
 
   it('날짜가 다른 시간 일정은 시작과 종료를 모두 표시한다', () => {

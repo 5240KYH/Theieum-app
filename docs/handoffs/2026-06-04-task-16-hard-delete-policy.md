@@ -2,7 +2,15 @@
 
 작성일: 2026-06-04, Asia/Seoul
 작업 경로: `/Users/kyh/theieum`
-현재 브랜치: `codex/task-15-mobile-pwa-staging`
+현재 기준 브랜치: `main`
+
+## 2026-06-05 Git 정리 상태
+
+- Task 16 변경은 Task 15/17 변경과 함께 PR #3으로 `main`에 merge되었다.
+- `main` 최신 커밋은 `56feb60 Merge pull request #3 from 5240KYH/codex/task-15-mobile-pwa-staging`이다.
+- 원격 기본 브랜치는 `main`으로 확인했다.
+- 작업 브랜치 `codex/task-15-mobile-pwa-staging`는 원격/로컬 모두 삭제했다.
+- 현재 이어갈 기준 브랜치는 `main`이다.
 
 ## 목표
 
@@ -89,10 +97,10 @@ git diff --check
 - 호스트 `./gradlew test`는 Java 21 toolchain 미설치로 실패한다. 백엔드 테스트는 위 Docker JDK 21 명령을 사용한다.
 - `docker compose up -d postgres-test`를 실행해 테스트한 뒤 `docker compose stop postgres-test`로 테스트 DB는 중지했다.
 - `docker compose up -d --build backend frontend`로 메인 Docker 앱은 Task 16 코드가 반영된 이미지로 재기동했다.
-- 사용자가 명시적으로 요청하기 전까지 `git add`, `git commit`, `git push`는 하지 않았다.
+- 2026-06-05 기준 이 변경은 PR #3으로 `main`에 merge되었다.
 
 ## 다음 후보
 
-1. 전체 검증 완료 후 Task 17 공용 캘린더 설계/구현
-2. Task 18 스테이징 외부 체험 운영 준비
-3. Google Calendar 연동은 Task 17 이후 별도 단계로 진행
+1. Task 18 스테이징 외부 체험 운영 준비
+2. Google Calendar 단방향 가져오기 설계
+3. 공휴일/반복 일정/알림 기능 확장

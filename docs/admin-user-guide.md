@@ -421,6 +421,20 @@ docker compose config
 git diff --check
 ```
 
+### 7.5 스테이징 체험 운영
+
+외부 체험을 열기 전 [스테이징 외부 체험 운영 런북](staging-operations-runbook.md)을 기준으로 HTTPS URL과 스모크 검증을 완료한다.
+
+체험자 계정 전달은 [스테이징 체험 계정 전달 양식](staging-tester-account-packet.md)의 역할별 문구를 사용한다. 30명 안팎 계정 배정과 첨부파일 운영 정책은 [스테이징 체험 계정과 첨부파일 관리 런북](staging-trial-data-and-attachments.md)을 기준으로 확인한다. 외부 체험자는 가능하면 개인별 계정으로 배정하고, 개인별 계정에만 첫 로그인 후 비밀번호 변경을 요청한다. 공유 확인용 계정을 전달하는 경우에는 비밀번호를 변경하지 않도록 안내한다.
+
+매니저 시나리오를 맡길 계정은 전달 전 `MANAGER` 역할이 있는지 확인한다. 모든 체험자에게 실제 개인정보 입력 금지와 실제 영수증 업로드 금지를 안내한다. 첨부파일은 기본적으로 신청서당 영수증 이미지 최대 10개, 파일당 5MB 이하로 제한된다.
+
+체험 종료 후에는 DB와 첨부파일 volume 보존 또는 삭제 여부를 결정한다. 삭제가 필요한 경우 서버에서 다음 명령을 사용한다.
+
+```bash
+docker compose --env-file .env.staging -f docker-compose.staging.yml down -v
+```
+
 ## 8. 운영 점검
 
 ### 8.1 일일 점검

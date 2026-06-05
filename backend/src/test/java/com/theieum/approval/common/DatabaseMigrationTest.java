@@ -55,12 +55,32 @@ class DatabaseMigrationTest {
         assertThat(receiptApprovalTypeCount).isEqualTo(1);
 
         Integer seedUserCount = jdbcTemplate.queryForObject("select count(*) from users", Integer.class);
-        assertThat(seedUserCount).isGreaterThanOrEqualTo(20);
+        assertThat(seedUserCount).isGreaterThanOrEqualTo(30);
 
         List<String> requiredLoginIds = jdbcTemplate.queryForList(
-                "select login_id from users where login_id in ('admin', 'employee01', 'approver01')",
+                """
+                select login_id
+                from users
+                where login_id in ('admin', 'employee01', 'approver01', 'trial-applicant01', 'trial-approver01', 'trial-manager01')
+                """,
                 String.class);
-        assertThat(requiredLoginIds).containsExactlyInAnyOrder("admin", "employee01", "approver01");
+        assertThat(requiredLoginIds).containsExactlyInAnyOrder(
+                "admin",
+                "employee01",
+                "approver01",
+                "trial-applicant01",
+                "trial-approver01",
+                "trial-manager01");
+
+        Integer activeTrialAccountCount = jdbcTemplate.queryForObject(
+                "select count(*) from users where login_id like 'trial-%' and active = true",
+                Integer.class);
+        assertThat(activeTrialAccountCount).isGreaterThanOrEqualTo(10);
+
+        Integer managerTrialAccountCount = jdbcTemplate.queryForObject(
+                "select count(*) from users where login_id like 'trial-manager%' and roles like '%MANAGER%' and active = true",
+                Integer.class);
+        assertThat(managerTrialAccountCount).isGreaterThanOrEqualTo(1);
 
         Integer usersMissingRequiredReferences = jdbcTemplate.queryForObject(
                 "select count(*) from users where organization_id is null or position_id is null",

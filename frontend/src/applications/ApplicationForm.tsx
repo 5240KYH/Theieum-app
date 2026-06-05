@@ -15,6 +15,7 @@ import {
 import { ApplicationResponse, ApprovalPreviewStep, canEditApplication } from './applicationTypes';
 
 const MAX_RECEIPT_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_RECEIPT_IMAGE_COUNT = 10;
 const SUPPORTED_RECEIPT_IMAGE_TYPES = new Set([
   'image/png',
   'image/jpeg',
@@ -45,6 +46,10 @@ function RequiredMark() {
   return <span className="required-mark" aria-hidden="true">*</span>;
 }
 
+function fileKey(file: File) {
+  return `${file.name}:${file.size}:${file.lastModified}`;
+}
+
 export function ApplicationForm() {
   const auth = useAuth();
   const navigate = useNavigate();
@@ -54,16 +59,16 @@ export function ApplicationForm() {
   const [vendor, setVendor] = useState('');
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
-  const [receiptFile, setReceiptFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState('');
+  const [receiptFiles, setReceiptFiles] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [draft, setDraft] = useState<ApplicationResponse | null>(null);
   const [draftPayloadSignature, setDraftPayloadSignature] = useState('');
-  const [attachedDraftId, setAttachedDraftId] = useState<number | null>(null);
+  const [uploadedFileKeys, setUploadedFileKeys] = useState<string[]>([]);
   const [existingAttachmentCount, setExistingAttachmentCount] = useState(0);
   const [approvalPreview, setApprovalPreview] = useState<ApprovalPreviewStep[]>([]);
   const [approvalPreviewError, setApprovalPreviewError] = useState('');
-  const [isPreviewOpen, setPreviewOpen] = useState(false);
+  const [previewFileIndex, setPreviewFileIndex] = useState<number | null>(null);
   const [isSaving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -77,9 +82,9 @@ export function ApplicationForm() {
       && vendor.trim()
       && amount
       && description.trim()
-      && (receiptFile || existingAttachmentCount > 0)
+      && (receiptFiles.length > 0 || existingAttachmentCount > 0)
     );
-  }, [amount, applicationDate, description, existingAttachmentCount, receiptDate, receiptFile, vendor]);
+  }, [amount, applicationDate, description, existingAttachmentCount, receiptDate, receiptFiles.length, vendor]);
 
   useEffect(() => {
     let ignore = false;
@@ -153,26 +158,21 @@ export function ApplicationForm() {
   }, []);
 
   useEffect(() => {
-    if (!receiptFile) {
-      setPreviewUrl('');
+    if (receiptFiles.length === 0 || typeof URL.createObjectURL !== 'function') {
+      setPreviewUrls([]);
       return undefined;
     }
 
-    if (typeof URL.createObjectURL !== 'function') {
-      setPreviewUrl('');
-      return undefined;
-    }
-
-    const url = URL.createObjectURL(receiptFile);
-    setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [receiptFile]);
+    const urls = receiptFiles.map((file) => URL.createObjectURL(file));
+    setPreviewUrls(urls);
+    return () => urls.forEach((url) => URL.revokeObjectURL(url));
+  }, [receiptFiles]);
 
   useEffect(() => {
-    if (isPreviewOpen) {
+    if (previewFileIndex !== null) {
       previewCloseButtonRef.current?.focus();
     }
-  }, [isPreviewOpen]);
+  }, [previewFileIndex]);
 
   function buildPayload() {
     return {
@@ -185,7 +185,7 @@ export function ApplicationForm() {
   }
 
   function closePreview() {
-    setPreviewOpen(false);
+    setPreviewFileIndex(null);
     window.requestAnimationFrame(() => previewButtonRef.current?.focus());
   }
 
@@ -202,36 +202,48 @@ export function ApplicationForm() {
   }
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0] ?? null;
-    if (!file) {
+    const selectedFiles = Array.from(event.target.files ?? []);
+    if (selectedFiles.length === 0) {
       return;
     }
 
-    if (!SUPPORTED_RECEIPT_IMAGE_TYPES.has(file.type)) {
-      clearFile();
+    if (selectedFiles.some((file) => !SUPPORTED_RECEIPT_IMAGE_TYPES.has(file.type))) {
+      resetFileInput();
       setError('PNG, JPG, GIF, WebP 이미지만 첨부할 수 있습니다.');
       setMessage('');
       return;
     }
 
-    if (file.size > MAX_RECEIPT_IMAGE_BYTES) {
-      clearFile();
+    if (selectedFiles.some((file) => file.size > MAX_RECEIPT_IMAGE_BYTES)) {
+      resetFileInput();
       setError('영수증 이미지는 5MB 이하로 첨부해주세요.');
       setMessage('');
       return;
     }
 
-    setReceiptFile(file);
-    setAttachedDraftId(null);
+    if (existingAttachmentCount + receiptFiles.length + selectedFiles.length > MAX_RECEIPT_IMAGE_COUNT) {
+      resetFileInput();
+      setError(`영수증 이미지는 신청서당 최대 ${MAX_RECEIPT_IMAGE_COUNT}개까지 첨부할 수 있습니다.`);
+      setMessage('');
+      return;
+    }
+
+    setReceiptFiles((current) => [...current, ...selectedFiles]);
+    resetFileInput();
     setMessage('');
     setError('');
   }
 
-  function clearFile() {
-    setReceiptFile(null);
-    setAttachedDraftId(null);
-    setPreviewOpen(false);
+  function resetFileInput() {
     setFileInputKey((value) => value + 1);
+  }
+
+  function clearFile(index: number) {
+    const removedFileKey = receiptFiles[index] ? fileKey(receiptFiles[index]) : '';
+    setReceiptFiles((current) => current.filter((_, fileIndex) => fileIndex !== index));
+    setUploadedFileKeys((current) => current.filter((key) => key !== removedFileKey));
+    setPreviewFileIndex((current) => (current === index ? null : current));
+    resetFileInput();
   }
 
   function validate() {
@@ -260,9 +272,16 @@ export function ApplicationForm() {
     setDraft(saved);
     setDraftPayloadSignature(payloadSignature);
 
-    if (receiptFile && attachedDraftId !== saved.id) {
-      await attachReceiptImage(saved.id, receiptFile);
-      setAttachedDraftId(saved.id);
+    const pendingFiles = receiptFiles.filter((file) => !uploadedFileKeys.includes(fileKey(file)));
+    for (const file of pendingFiles) {
+      await attachReceiptImage(saved.id, file);
+    }
+
+    if (pendingFiles.length > 0) {
+      setUploadedFileKeys((current) => Array.from(new Set([
+        ...current,
+        ...pendingFiles.map((file) => fileKey(file))
+      ])));
     }
 
     return saved;
@@ -404,37 +423,47 @@ export function ApplicationForm() {
             id="receipt-image"
             accept="image/png,image/jpeg,image/gif,image/webp"
             type="file"
+            multiple
             onChange={handleFileChange}
           />
 
-          {receiptFile ? (
-            <div className="attachment-preview">
-              <div className="attachment-thumb">
-                {previewUrl ? (
-                  <img alt={`${receiptFile.name} 미리보기`} src={previewUrl} />
-                ) : (
-                  <img alt={`${receiptFile.name} 미리보기`} />
-                )}
-              </div>
-              <div>
-                <strong>{receiptFile.name}</strong>
-                <span>{Math.ceil(receiptFile.size / 1024)}KB</span>
-              </div>
-              <div className="row-actions">
-                <button
-                  className="secondary-button"
-                  type="button"
-                  ref={previewButtonRef}
-                  onClick={() => setPreviewOpen(true)}
-                >
-                  <Eye aria-hidden="true" size={16} />
-                  첨부 미리보기
-                </button>
-                <button className="secondary-button danger-button" type="button" onClick={clearFile}>
-                  <Trash2 aria-hidden="true" size={16} />
-                  첨부 삭제
-                </button>
-              </div>
+          {receiptFiles.length > 0 ? (
+            <div className="attachment-preview-grid">
+              {receiptFiles.map((file, index) => (
+                <div className="attachment-preview" key={fileKey(file)}>
+                  <div className="attachment-thumb">
+                    {previewUrls[index] ? (
+                      <img alt={`${file.name} 미리보기`} src={previewUrls[index]} />
+                    ) : (
+                      <img alt={`${file.name} 미리보기`} />
+                    )}
+                  </div>
+                  <div>
+                    <strong>{file.name}</strong>
+                    <span>{Math.ceil(file.size / 1024)}KB</span>
+                  </div>
+                  <div className="row-actions">
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      ref={index === 0 ? previewButtonRef : undefined}
+                      onClick={() => setPreviewFileIndex(index)}
+                    >
+                      <Eye aria-hidden="true" size={16} />
+                      첨부 미리보기
+                    </button>
+                    <button
+                      className="secondary-button danger-button"
+                      type="button"
+                      aria-label={`${file.name} 첨부 삭제`}
+                      onClick={() => clearFile(index)}
+                    >
+                      <Trash2 aria-hidden="true" size={16} />
+                      첨부 삭제
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (
             <div className="empty-state">
@@ -463,7 +492,7 @@ export function ApplicationForm() {
         </div>
       </form>
 
-      {isPreviewOpen && receiptFile ? (
+      {previewFileIndex !== null && receiptFiles[previewFileIndex] ? (
         <div
           className="modal-backdrop"
           role="dialog"
@@ -473,7 +502,7 @@ export function ApplicationForm() {
         >
           <div className="preview-modal">
             <div className="table-toolbar">
-              <strong>{receiptFile.name}</strong>
+              <strong>{receiptFiles[previewFileIndex].name}</strong>
               <button
                 className="icon-button"
                 type="button"
@@ -485,7 +514,12 @@ export function ApplicationForm() {
               </button>
             </div>
             <div className="preview-canvas">
-              {previewUrl ? <img alt={`${receiptFile.name} 확대 미리보기`} src={previewUrl} /> : <span>미리보기 없음</span>}
+              {previewUrls[previewFileIndex] ? (
+                <img
+                  alt={`${receiptFiles[previewFileIndex].name} 확대 미리보기`}
+                  src={previewUrls[previewFileIndex]}
+                />
+              ) : <span>미리보기 없음</span>}
             </div>
           </div>
         </div>

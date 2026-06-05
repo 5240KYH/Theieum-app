@@ -54,13 +54,78 @@ export function weekDays(date: Date) {
 }
 
 export function eventsByDate(events: CalendarEvent[]) {
-  return events.reduce((groups, event) => {
-    const key = toDateInputValue(event.startAt);
-    const values = groups.get(key) ?? [];
-    values.push(event);
-    groups.set(key, values);
-    return groups;
+  const groups = events.reduce((currentGroups, event) => {
+    eventDateKeys(event).forEach((key) => {
+      const values = currentGroups.get(key) ?? [];
+      values.push(event);
+      currentGroups.set(key, values);
+    });
+    return currentGroups;
   }, new Map<string, CalendarEvent[]>());
+
+  groups.forEach((values) => {
+    values.sort((first, second) => first.startAt.localeCompare(second.startAt));
+  });
+
+  return groups;
+}
+
+export function displayEventChipRange(startAt: string, endAt: string, allDay = false) {
+  const startDate = toDateInputValue(startAt);
+  const endDate = allDay ? previousDateKey(toDateInputValue(endAt)) : toDateInputValue(endAt);
+
+  if (allDay) {
+    return startDate === endDate
+      ? '종일'
+      : `${shortDate(startDate)}-${shortDate(endDate)} 종일`;
+  }
+
+  const startTime = toTimeInputValue(startAt);
+  const endTime = toTimeInputValue(endAt);
+  if (startDate === endDate) {
+    return `${startTime}-${endTime}`;
+  }
+
+  return `${shortDate(startDate)} ${startTime}-${shortDate(endDate)} ${endTime}`;
+}
+
+export function displayEventMobileMarker(startAt: string, endAt: string, allDay = false) {
+  const startDate = toDateInputValue(startAt);
+  const endDate = allDay ? previousDateKey(toDateInputValue(endAt)) : toDateInputValue(endAt);
+
+  if (startDate !== endDate) {
+    return `${shortDate(startDate)}-${shortDate(endDate)}`;
+  }
+
+  if (allDay) {
+    return '종일';
+  }
+
+  return toTimeInputValue(startAt);
+}
+
+function eventDateKeys(event: CalendarEvent) {
+  const startDate = toDateInputValue(event.startAt);
+  const endDate = event.allDay
+    ? previousDateKey(toDateInputValue(event.endAt))
+    : toDateInputValue(event.endAt);
+  const keys: string[] = [];
+  let current = startDate;
+
+  for (let dayCount = 0; dayCount < 370; dayCount += 1) {
+    keys.push(current);
+    if (current >= endDate) {
+      break;
+    }
+    current = addDaysToDateKey(current, 1);
+  }
+
+  return keys;
+}
+
+function shortDate(value: string) {
+  const [, month, day] = value.split('-');
+  return `${Number(month)}/${Number(day)}`;
 }
 
 export function displayDateTime(value: string, allDay = false) {

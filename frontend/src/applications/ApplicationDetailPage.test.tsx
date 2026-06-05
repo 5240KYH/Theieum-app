@@ -50,6 +50,12 @@ const applicationResponse = {
       originalFilename: 'receipt.png',
       mimeType: 'image/png',
       fileSize: 8
+    },
+    {
+      id: 502,
+      originalFilename: 'receipt-2.png',
+      mimeType: 'image/png',
+      fileSize: 9
     }
   ]
 };
@@ -103,6 +109,13 @@ describe('ApplicationDetailPage', () => {
         });
       }
 
+      if (url === '/api/applications/100/attachments/502/content') {
+        return new Response(new Blob(['receipt-2'], { type: 'image/png' }), {
+          status: 200,
+          headers: { 'Content-Type': 'image/png' }
+        });
+      }
+
       return new Response(null, { status: 404 });
     });
 
@@ -113,6 +126,7 @@ describe('ApplicationDetailPage', () => {
     const preview = await screen.findByAltText('receipt.png 미리보기');
     expect(preview).toHaveAttribute('src', 'blob:receipt-preview');
     expect(screen.getByText('receipt.png')).toBeInTheDocument();
+    expect(screen.getByText('receipt-2.png')).toBeInTheDocument();
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -122,6 +136,36 @@ describe('ApplicationDetailPage', () => {
         })
       );
     });
+  });
+
+  it('첨부 썸네일을 클릭하면 확대 미리보기를 표시한다', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url === '/api/applications/100') {
+        return new Response(JSON.stringify(applicationResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      if (url.includes('/attachments/') && url.endsWith('/content')) {
+        return new Response(new Blob(['receipt'], { type: 'image/png' }), {
+          status: 200,
+          headers: { 'Content-Type': 'image/png' }
+        });
+      }
+
+      return new Response(null, { status: 404 });
+    }));
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'receipt.png 크게 보기' }));
+
+    const dialog = screen.getByRole('dialog', { name: '첨부 이미지 확대 보기' });
+    expect(dialog).toHaveTextContent('receipt.png');
+    expect(within(dialog).getByAltText('receipt.png 확대 미리보기')).toHaveAttribute('src', 'blob:receipt-preview');
   });
 
   it('임시저장 신청서를 취소한다', async () => {

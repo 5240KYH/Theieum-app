@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -39,8 +40,6 @@ import jakarta.validation.constraints.Positive;
 @RequestMapping("/api/applications")
 public class ApplicationController {
 
-    private static final long MAX_RECEIPT_IMAGE_BYTES = 5 * 1024 * 1024;
-
     private final ApplicationService applicationService;
     private final ApplicationRepository applicationRepository;
     private final ApplicationApprovalStepRepository approvalStepRepository;
@@ -48,6 +47,7 @@ public class ApplicationController {
     private final AttachmentRepository attachmentRepository;
     private final FileStorage fileStorage;
     private final ApplicationHardDeleteService applicationHardDeleteService;
+    private final long maxReceiptImageBytes;
 
     public ApplicationController(
             ApplicationService applicationService,
@@ -56,7 +56,8 @@ public class ApplicationController {
             ApprovalHistoryRepository approvalHistoryRepository,
             AttachmentRepository attachmentRepository,
             FileStorage fileStorage,
-            ApplicationHardDeleteService applicationHardDeleteService) {
+            ApplicationHardDeleteService applicationHardDeleteService,
+            @Value("${app.attachments.max-image-bytes:5242880}") long maxReceiptImageBytes) {
         this.applicationService = applicationService;
         this.applicationRepository = applicationRepository;
         this.approvalStepRepository = approvalStepRepository;
@@ -64,6 +65,7 @@ public class ApplicationController {
         this.attachmentRepository = attachmentRepository;
         this.fileStorage = fileStorage;
         this.applicationHardDeleteService = applicationHardDeleteService;
+        this.maxReceiptImageBytes = maxReceiptImageBytes;
     }
 
     @GetMapping("/my")
@@ -135,8 +137,8 @@ public class ApplicationController {
         if (contentType == null || !contentType.startsWith("image/")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Receipt attachment must be an image");
         }
-        if (file.getSize() > MAX_RECEIPT_IMAGE_BYTES) {
-            throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "Receipt attachment must be 5MB or smaller");
+        if (file.getSize() > maxReceiptImageBytes) {
+            throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "Receipt attachment exceeds configured size limit");
         }
         Attachment attachment = applicationService.attachReceiptImage(
                 id,

@@ -27,7 +27,8 @@ import com.theieum.approval.common.WorkflowConflictException;
         "spring.flyway.clean-disabled=false",
         "spring.flyway.locations=classpath:db/migration,classpath:db/seed",
         "app.security.jwt-secret=test-jwt-secret-that-is-long-enough-for-hmac",
-        "app.file-storage.root-path=/private/tmp/theieum-approval-test"
+        "app.file-storage.root-path=/private/tmp/theieum-approval-test",
+        "app.attachments.max-files-per-application=10"
 })
 class ApplicationSubmissionTest {
 
@@ -169,6 +170,34 @@ class ApplicationSubmissionTest {
     }
 
     @Test
+    void draftAllowsTenReceiptImagesAndRejectsEleventh() {
+        Application application = createDefaultDraft();
+        for (int index = 1; index <= 10; index++) {
+            applicationService.attachReceiptImage(
+                    application.getId(),
+                    3L,
+                    "receipt-" + index + ".png",
+                    "image/png",
+                    pngBytes());
+        }
+
+        assertThatThrownBy(() -> applicationService.attachReceiptImage(
+                        application.getId(),
+                        3L,
+                        "receipt-11.png",
+                        "image/png",
+                        pngBytes()))
+                .isInstanceOf(WorkflowConflictException.class)
+                .hasMessageContaining("Receipt attachment limit exceeded");
+
+        Integer attachmentCount = jdbcTemplate.queryForObject(
+                "select count(*) from attachments where application_id = ?",
+                Integer.class,
+                application.getId());
+        assertThat(attachmentCount).isEqualTo(10);
+    }
+
+    @Test
     void submittedApplicationCannotBeSubmittedAgain() {
         Application application = createDefaultDraft();
         attachDefaultPng(application.getId(), 3L);
@@ -192,8 +221,84 @@ class ApplicationSubmissionTest {
     }
 
     @Test
+    void nonApplicantCannotSubmitDraft() {
+        Application application = createDefaultDraft();
+        attachDefaultPng(application.getId(), 3L);
+
+        assertThatThrownBy(() -> applicationService.submit(application.getId(), 4L))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("Only the applicant can submit this application");
+
+        assertThat(applicationStatus(application.getId())).isEqualTo("DRAFT");
+        assertThat(rowCount("application_approval_steps", application.getId())).isZero();
+        assertThat(rowCount("notification_events", application.getId())).isZero();
+    }
+
+    @Test
+    void canceledApplicationMustBeRevisedBeforeSubmit() {
+        Application application = createDefaultDraft();
+        attachDefaultPng(application.getId(), 3L);
+        applicationService.cancelDraft(application.getId(), 3L);
+
+        assertThatThrownBy(() -> applicationService.submit(application.getId(), 3L))
+                .isInstanceOf(WorkflowConflictException.class)
+                .hasMessageContaining("Only draft applications can be submitted");
+
+        assertThat(applicationStatus(application.getId())).isEqualTo("CANCELED");
+        assertThat(rowCount("application_approval_steps", application.getId())).isZero();
+        assertThat(rowCount("notification_events", application.getId())).isZero();
+
+        applicationService.updateDraft(new ApplicationService.UpdateDraftCommand(
+                application.getId(),
+                3L,
+                1L,
+                LocalDate.of(2026, 6, 4),
+                LocalDate.of(2026, 6, 3),
+                "재작성 상점",
+                new BigDecimal("22000.00"),
+                "취소 후 재작성"));
+
+        Application submitted = applicationService.submit(application.getId(), 3L);
+
+        assertThat(submitted.getStatus()).isEqualTo(ApplicationStatus.IN_APPROVAL);
+        assertThat(rowCount("application_approval_steps", application.getId())).isOne();
+        assertThat(rowCount("notification_events", application.getId())).isOne();
+    }
+
+    @Test
     void submitApplicationRenumbersMultiApproverResolverStepsForSnapshot() {
         long approvalTypeId = 201L;
+        jdbcTemplate.update(
+                """
+                insert into organizations (id, name, parent_id, level_no, sort_order, active)
+                values (?, ?, 1, 2, 90, true)
+                """,
+                301L,
+                "다중 결재자 테스트팀");
+        jdbcTemplate.update(
+                """
+                insert into users (
+                    id,
+                    login_id,
+                    external_subject,
+                    password_hash,
+                    name,
+                    email,
+                    organization_id,
+                    position_id,
+                    roles,
+                    active
+                ) values
+                    (?, 'multi-step-applicant-1', null, 'test-password-hash', '다중결재신청자1', 'multi-step-applicant-1@test.local', ?, 1, 'APPLICANT,APPROVER', true),
+                    (?, 'multi-step-applicant-2', null, 'test-password-hash', '다중결재신청자2', 'multi-step-applicant-2@test.local', ?, 1, 'APPLICANT,APPROVER', true),
+                    (?, 'multi-step-applicant-3', null, 'test-password-hash', '다중결재신청자3', 'multi-step-applicant-3@test.local', ?, 1, 'APPLICANT,APPROVER', true)
+                """,
+                301L,
+                301L,
+                302L,
+                301L,
+                303L,
+                301L);
         jdbcTemplate.update(
                 "insert into approval_types (id, name, description, active) values (?, ?, ?, true)",
                 approvalTypeId,
@@ -221,7 +326,7 @@ class ApplicationSubmissionTest {
                 1,
                 1L);
         Application application = applicationService.createDraft(new ApplicationService.CreateDraftCommand(
-                3L,
+                301L,
                 approvalTypeId,
                 LocalDate.of(2026, 6, 3),
                 LocalDate.of(2026, 6, 2),
@@ -230,12 +335,12 @@ class ApplicationSubmissionTest {
                 "점심 식대"));
         applicationService.attachReceiptImage(
                 application.getId(),
-                3L,
+                301L,
                 "receipt.png",
                 "image/png",
                 pngBytes());
 
-        applicationService.submit(application.getId(), 3L);
+        applicationService.submit(application.getId(), 301L);
 
         List<Map<String, Object>> steps = jdbcTemplate.queryForList(
                 """
@@ -251,7 +356,7 @@ class ApplicationSubmissionTest {
                 .containsExactly(1, 2, 3);
         assertThat(steps)
                 .extracting(step -> step.get("original_approver_id"))
-                .containsExactly(3L, 4L, 8L);
+                .containsExactly(301L, 302L, 303L);
 
         List<Map<String, Object>> notifications = jdbcTemplate.queryForList(
                 """
@@ -262,7 +367,7 @@ class ApplicationSubmissionTest {
                 application.getId());
         assertThat(notifications).hasSize(1);
         assertThat(notifications.getFirst())
-                .containsEntry("recipient_id", 3L)
+                .containsEntry("recipient_id", 301L)
                 .containsEntry("notification_type", "APPROVAL_REQUESTED")
                 .containsEntry("channel", "IN_APP")
                 .containsEntry("status", "CREATED");
@@ -277,6 +382,21 @@ class ApplicationSubmissionTest {
                 "테스트 상점",
                 new BigDecimal("12500.00"),
                 "점심 식대"));
+    }
+
+    private String applicationStatus(long applicationId) {
+        return jdbcTemplate.queryForObject(
+                "select status from applications where id = ?",
+                String.class,
+                applicationId);
+    }
+
+    private int rowCount(String tableName, long applicationId) {
+        Integer count = jdbcTemplate.queryForObject(
+                "select count(*) from " + tableName + " where application_id = ?",
+                Integer.class,
+                applicationId);
+        return count == null ? 0 : count;
     }
 
     private void attachDefaultPng(long applicationId, long uploaderId) {
