@@ -1,5 +1,11 @@
 import { api, apiBlob } from '../shared/api';
-import { ApplicationResponse, ApprovalPreviewStep, AttachmentResponse, CreateApplicationPayload } from './applicationTypes';
+import {
+  ApplicationResponse,
+  ApprovalOrganizationSummary,
+  ApprovalPreviewStep,
+  AttachmentResponse,
+  CreateApplicationPayload
+} from './applicationTypes';
 
 export function createApplication(payload: CreateApplicationPayload) {
   return api<ApplicationResponse>('/applications', {
@@ -47,8 +53,14 @@ export function getMyApplications() {
   return api<ApplicationResponse[]>('/applications/my');
 }
 
-export function getApprovalPreview(approvalTypeId = 1) {
-  return api<ApprovalPreviewStep[]>(`/applications/approval-preview?approvalTypeId=${approvalTypeId}`);
+export function getApprovalOrganizations() {
+  return api<ApprovalOrganizationSummary[]>('/applications/approval-organizations');
+}
+
+export function getApprovalPreview(approvalTypeId: number, approvalOrganizationId: number) {
+  return api<ApprovalPreviewStep[]>(
+    `/applications/approval-preview?approvalTypeId=${approvalTypeId}&approvalOrganizationId=${approvalOrganizationId}`
+  );
 }
 
 export function getApplication(applicationId: string | number) {

@@ -34,6 +34,8 @@ const draftResponse = {
   id: 100,
   applicant: { id: 3, name: '직원01' },
   approvalTypeId: 1,
+  approvalOrganizationId: 3,
+  approvalOrganizationName: '개발팀',
   applicationDate: '2026-06-03',
   receiptDate: '2026-06-02',
   vendor: '문구점',
@@ -61,6 +63,37 @@ const submittedResponse = {
   ]
 };
 
+const approvalOrganizations = [
+  { id: 3, name: '개발팀', parentId: 1, levelNo: 2, primary: true },
+  { id: 4, name: '재무팀', parentId: 1, levelNo: 2, primary: false }
+];
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' }
+  });
+}
+
+function mockDefaultApprovalFetch() {
+  return vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+
+    if (url === '/api/applications/approval-organizations') {
+      return jsonResponse(approvalOrganizations);
+    }
+
+    if (url === '/api/applications/approval-preview?approvalTypeId=1&approvalOrganizationId=3') {
+      return jsonResponse([
+        { stepOrder: 1, approver: { id: 18, name: '개발팀장' } },
+        { stepOrder: 2, approver: { id: 20, name: '대표' } }
+      ]);
+    }
+
+    return jsonResponse([]);
+  });
+}
+
 describe('ApplicationForm', () => {
   let storage: Storage;
 
@@ -84,7 +117,7 @@ describe('ApplicationForm', () => {
   });
 
   it('필수 항목이 비어 있으면 제출할 수 없다', async () => {
-    vi.stubGlobal('fetch', vi.fn());
+    vi.stubGlobal('fetch', mockDefaultApprovalFetch());
 
     render(<App />);
     vi.mocked(fetch).mockClear();
@@ -99,32 +132,20 @@ describe('ApplicationForm', () => {
     await userEvent.click(screen.getByRole('button', { name: '제출' }));
 
     expect(screen.getByText('필수 항목을 입력하면 제출할 수 있습니다.')).toBeInTheDocument();
-    expect(fetch).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalledWith('/api/applications', expect.objectContaining({
+      method: 'POST'
+    }));
   });
 
   it('신청 전에 예상 결재선을 표시한다', async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-
-      if (url === '/api/applications/approval-preview?approvalTypeId=1') {
-        return new Response(JSON.stringify([
-          { stepOrder: 1, approver: { id: 18, name: '개발팀장' } },
-          { stepOrder: 2, approver: { id: 20, name: '대표' } }
-        ]), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-
-      return new Response(JSON.stringify([]), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    });
+    const fetchMock = mockDefaultApprovalFetch();
     vi.stubGlobal('fetch', fetchMock);
 
     render(<App />);
 
+    const organizationSelect = await screen.findByLabelText('결재 기준 조직');
+    expect(organizationSelect).toHaveValue('3');
+    expect(organizationSelect).toHaveDisplayValue('개발팀 (대표)');
     expect(await screen.findByRole('heading', { name: '예상 결재선' })).toBeInTheDocument();
     expect(screen.getByText('1단계')).toBeInTheDocument();
     expect(screen.getByText('개발팀장')).toBeInTheDocument();
@@ -134,13 +155,52 @@ describe('ApplicationForm', () => {
       screen.getByRole('heading', { name: '예상 결재선' }).compareDocumentPosition(screen.getByLabelText('신청일자'))
         & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/applications/approval-preview?approvalTypeId=1&approvalOrganizationId=3',
+      expect.anything()
+    );
+  });
+
+  it('조직 선택을 변경하면 선택 조직으로 예상 결재선을 다시 조회한다', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url === '/api/applications/approval-organizations') {
+        return jsonResponse(approvalOrganizations);
+      }
+
+      if (url === '/api/applications/approval-preview?approvalTypeId=1&approvalOrganizationId=3') {
+        return jsonResponse([
+          { stepOrder: 1, approver: { id: 18, name: '개발팀장' } }
+        ]);
+      }
+
+      if (url === '/api/applications/approval-preview?approvalTypeId=1&approvalOrganizationId=4') {
+        return jsonResponse([
+          { stepOrder: 1, approver: { id: 31, name: '재무팀장' } }
+        ]);
+      }
+
+      return jsonResponse([]);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    const organizationSelect = await screen.findByLabelText('결재 기준 조직');
+    expect(await screen.findByText('개발팀장')).toBeInTheDocument();
+
+    await userEvent.selectOptions(organizationSelect, '4');
+
+    expect(await screen.findByText('재무팀장')).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/applications/approval-preview?approvalTypeId=1&approvalOrganizationId=4',
+      expect.anything()
+    );
   });
 
   it('영수증 이미지 첨부 필수 표시는 라벨 안에서 한 줄로 유지한다', () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify([]), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    })));
+    vi.stubGlobal('fetch', mockDefaultApprovalFetch());
 
     render(<App />);
 
@@ -151,10 +211,7 @@ describe('ApplicationForm', () => {
   });
 
   it('모바일에서 첨부 영역과 제출 액션을 고정형 구조로 제공한다', () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify([]), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    })));
+    vi.stubGlobal('fetch', mockDefaultApprovalFetch());
 
     render(<App />);
 
@@ -163,7 +220,7 @@ describe('ApplicationForm', () => {
   });
 
   it('여러 이미지 첨부 후 썸네일과 개별 삭제 버튼을 표시한다', async () => {
-    vi.stubGlobal('fetch', vi.fn());
+    vi.stubGlobal('fetch', mockDefaultApprovalFetch());
     render(<App />);
 
     const firstFile = new File(['receipt'], 'receipt.png', { type: 'image/png' });
@@ -185,6 +242,8 @@ describe('ApplicationForm', () => {
       const url = String(input);
 
       if (url === '/api/applications' && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body));
+        expect(body.approvalOrganizationId).toBe(3);
         return new Response(JSON.stringify(draftResponse), {
           status: 200,
           headers: { 'Content-Type': 'application/json' }
@@ -218,6 +277,16 @@ describe('ApplicationForm', () => {
           status: 200,
           headers: { 'Content-Type': 'application/json' }
         });
+      }
+
+      if (url === '/api/applications/approval-organizations') {
+        return jsonResponse(approvalOrganizations);
+      }
+
+      if (url === '/api/applications/approval-preview?approvalTypeId=1&approvalOrganizationId=3') {
+        return jsonResponse([
+          { stepOrder: 1, approver: { id: 18, name: '개발팀장' } }
+        ]);
       }
 
       return new Response(null, { status: 404 });
@@ -259,6 +328,7 @@ describe('ApplicationForm', () => {
 
       if (url === '/api/applications' && init?.method === 'POST') {
         const body = JSON.parse(String(init.body));
+        expect(body.approvalOrganizationId).toBe(3);
         return new Response(JSON.stringify({
           ...draftResponse,
           vendor: body.vendor,
@@ -285,6 +355,7 @@ describe('ApplicationForm', () => {
       if (url === '/api/applications/100' && init?.method === 'PUT') {
         const body = JSON.parse(String(init.body));
         expect(body.vendor).toBe('카페');
+        expect(body.approvalOrganizationId).toBe(3);
         return new Response(JSON.stringify({
           ...draftResponse,
           vendor: body.vendor,
@@ -318,6 +389,16 @@ describe('ApplicationForm', () => {
           status: 200,
           headers: { 'Content-Type': 'application/json' }
         });
+      }
+
+      if (url === '/api/applications/approval-organizations') {
+        return jsonResponse(approvalOrganizations);
+      }
+
+      if (url === '/api/applications/approval-preview?approvalTypeId=1&approvalOrganizationId=3') {
+        return jsonResponse([
+          { stepOrder: 1, approver: { id: 18, name: '개발팀장' } }
+        ]);
       }
 
       return new Response(null, { status: 404 });
@@ -360,7 +441,7 @@ describe('ApplicationForm', () => {
   });
 
   it('지원하지 않는 이미지 형식이나 5MB 초과 파일은 첨부하지 않는다', async () => {
-    vi.stubGlobal('fetch', vi.fn());
+    vi.stubGlobal('fetch', mockDefaultApprovalFetch());
     render(<App />);
     vi.mocked(fetch).mockClear();
 
@@ -385,5 +466,45 @@ describe('ApplicationForm', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent('영수증 이미지는 5MB 이하로 첨부해주세요.');
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('수정 화면은 기존 신청서의 결재 기준 조직을 선택값으로 사용한다', async () => {
+    window.history.pushState({}, '', '/applications/100/edit');
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url === '/api/applications/100') {
+        return jsonResponse({
+          ...draftResponse,
+          approvalOrganizationId: 4,
+          approvalOrganizationName: '재무팀',
+          attachments: [{ id: 501, originalFilename: 'receipt.png', mimeType: 'image/png', fileSize: 7 }]
+        });
+      }
+
+      if (url === '/api/applications/approval-organizations') {
+        return jsonResponse(approvalOrganizations);
+      }
+
+      if (url === '/api/applications/approval-preview?approvalTypeId=1&approvalOrganizationId=4') {
+        return jsonResponse([
+          { stepOrder: 1, approver: { id: 31, name: '재무팀장' } }
+        ]);
+      }
+
+      return jsonResponse([]);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    const organizationSelect = await screen.findByLabelText('결재 기준 조직');
+
+    expect(organizationSelect).toHaveValue('4');
+    expect(await screen.findByText('재무팀장')).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/applications/approval-preview?approvalTypeId=1&approvalOrganizationId=4',
+      expect.anything()
+    );
   });
 });

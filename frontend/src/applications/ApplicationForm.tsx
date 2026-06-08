@@ -8,11 +8,17 @@ import {
   attachReceiptImage,
   createApplication,
   getApplication,
+  getApprovalOrganizations,
   getApprovalPreview,
   submitApplication,
   updateApplication
 } from './applicationApi';
-import { ApplicationResponse, ApprovalPreviewStep, canEditApplication } from './applicationTypes';
+import {
+  ApplicationResponse,
+  ApprovalOrganizationSummary,
+  ApprovalPreviewStep,
+  canEditApplication
+} from './applicationTypes';
 
 const MAX_RECEIPT_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_RECEIPT_IMAGE_COUNT = 10;
@@ -66,6 +72,8 @@ export function ApplicationForm() {
   const [draftPayloadSignature, setDraftPayloadSignature] = useState('');
   const [uploadedFileKeys, setUploadedFileKeys] = useState<string[]>([]);
   const [existingAttachmentCount, setExistingAttachmentCount] = useState(0);
+  const [approvalOrganizations, setApprovalOrganizations] = useState<ApprovalOrganizationSummary[]>([]);
+  const [approvalOrganizationId, setApprovalOrganizationId] = useState<number | null>(null);
   const [approvalPreview, setApprovalPreview] = useState<ApprovalPreviewStep[]>([]);
   const [approvalPreviewError, setApprovalPreviewError] = useState('');
   const [previewFileIndex, setPreviewFileIndex] = useState<number | null>(null);
@@ -111,7 +119,10 @@ export function ApplicationForm() {
         setAmount(String(application.amount));
         setDescription(application.description);
         setExistingAttachmentCount(application.attachments?.length ?? 0);
+        setApprovalOrganizationId(application.approvalOrganizationId);
         setDraftPayloadSignature(JSON.stringify({
+          approvalTypeId: application.approvalTypeId,
+          approvalOrganizationId: application.approvalOrganizationId,
           applicationDate: application.applicationDate,
           receiptDate: application.receiptDate,
           vendor: application.vendor,
@@ -135,10 +146,50 @@ export function ApplicationForm() {
   useEffect(() => {
     let ignore = false;
 
+    async function loadApprovalOrganizations() {
+      try {
+        const organizations = await getApprovalOrganizations();
+        if (ignore) {
+          return;
+        }
+        setApprovalOrganizations(organizations);
+        setApprovalOrganizationId((current) => {
+          if (current !== null) {
+            return current;
+          }
+
+          return (organizations.find((organization) => organization.primary) ?? organizations[0] ?? null)
+            ?.id ?? null;
+        });
+      } catch (requestError) {
+        if (!ignore) {
+          setApprovalOrganizations([]);
+          setApprovalPreview([]);
+          setApprovalPreviewError(errorMessage(requestError));
+        }
+      }
+    }
+
+    void loadApprovalOrganizations();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!approvalOrganizationId) {
+      setApprovalPreview([]);
+      return undefined;
+    }
+
+    let ignore = false;
+    const selectedApprovalOrganizationId = approvalOrganizationId;
+
     async function loadApprovalPreview() {
       setApprovalPreviewError('');
       try {
-        const steps = await getApprovalPreview(1);
+        const steps = await getApprovalPreview(1, selectedApprovalOrganizationId);
         if (!ignore) {
           setApprovalPreview(steps);
         }
@@ -155,7 +206,7 @@ export function ApplicationForm() {
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [approvalOrganizationId]);
 
   useEffect(() => {
     if (receiptFiles.length === 0 || typeof URL.createObjectURL !== 'function') {
@@ -176,6 +227,8 @@ export function ApplicationForm() {
 
   function buildPayload() {
     return {
+      approvalTypeId: 1,
+      approvalOrganizationId: approvalOrganizationId ?? 0,
       applicationDate,
       receiptDate,
       vendor: vendor.trim(),
@@ -247,6 +300,11 @@ export function ApplicationForm() {
   }
 
   function validate() {
+    if (!approvalOrganizationId) {
+      setError('결재 기준 조직을 선택하면 저장/제출할 수 있습니다.');
+      return false;
+    }
+
     if (!isComplete) {
       setError('필수 항목을 입력하면 제출할 수 있습니다.');
       return false;
@@ -360,6 +418,20 @@ export function ApplicationForm() {
         </section>
 
         <div className="form-grid">
+          <label>
+            <span>결재 기준 조직 <RequiredMark /></span>
+            <select
+              aria-label="결재 기준 조직"
+              value={approvalOrganizationId ?? ''}
+              onChange={(event) => setApprovalOrganizationId(Number(event.target.value))}
+            >
+              {approvalOrganizations.map((organization) => (
+                <option key={organization.id} value={organization.id}>
+                  {organization.primary ? `${organization.name} (대표)` : organization.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <label>
             <span>신청일자 <RequiredMark /></span>
             <input

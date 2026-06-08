@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 
 import com.theieum.approval.approval.ApprovalType;
+import com.theieum.approval.organization.Organization;
 import com.theieum.approval.user.User;
 
 import jakarta.persistence.Column;
@@ -35,6 +36,10 @@ public class Application {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "approval_type_id", nullable = false)
     private ApprovalType approvalType;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "approval_organization_id", nullable = false)
+    private Organization approvalOrganization;
 
     @Column(name = "application_date", nullable = false)
     private LocalDate applicationDate;
@@ -73,6 +78,7 @@ public class Application {
     public Application(
             User applicant,
             ApprovalType approvalType,
+            Organization approvalOrganization,
             LocalDate applicationDate,
             LocalDate receiptDate,
             String vendor,
@@ -80,6 +86,7 @@ public class Application {
             String description) {
         this.applicant = applicant;
         this.approvalType = approvalType;
+        this.approvalOrganization = approvalOrganization;
         this.applicationDate = applicationDate;
         this.receiptDate = receiptDate;
         this.vendor = vendor;
@@ -100,6 +107,7 @@ public class Application {
 
     public void updateDraft(
             ApprovalType approvalType,
+            Organization approvalOrganization,
             LocalDate applicationDate,
             LocalDate receiptDate,
             String vendor,
@@ -110,6 +118,7 @@ public class Application {
             throw new IllegalStateException("Only editable applications can be updated");
         }
         this.approvalType = approvalType;
+        this.approvalOrganization = approvalOrganization;
         this.applicationDate = applicationDate;
         this.receiptDate = receiptDate;
         this.vendor = vendor;
@@ -162,6 +171,10 @@ public class Application {
 
     public ApprovalType getApprovalType() {
         return approvalType;
+    }
+
+    public Organization getApprovalOrganization() {
+        return approvalOrganization;
     }
 
     public LocalDate getApplicationDate() {

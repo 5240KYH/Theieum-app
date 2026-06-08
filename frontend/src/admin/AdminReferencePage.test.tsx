@@ -38,6 +38,7 @@ const positions = [
 
 const organizations = [
   { id: 1, name: '더이음', parent_id: null, level_no: 1, sort_order: 10, active: true },
+  { id: 2, name: '경영지원팀', parent_id: 1, level_no: 2, sort_order: 15, active: true },
   { id: 3, name: '개발팀', parent_id: 1, level_no: 2, sort_order: 20, active: true }
 ];
 
@@ -77,6 +78,17 @@ const users = [
     position_name: '팀장',
     roles: 'APPROVER,APPLICANT',
     active: true
+  }
+];
+
+const multiOrganizationUsers = [
+  {
+    ...users[2],
+    organizationMemberships: [
+      { organizationId: 3, organizationName: '개발팀', primary: true, active: true, sortOrder: 10 },
+      { organizationId: 1, organizationName: '더이음', primary: false, active: true, sortOrder: 20 },
+      { organizationId: 2, organizationName: '경영지원팀', primary: false, active: false, sortOrder: 30 }
+    ]
   }
 ];
 
@@ -400,7 +412,7 @@ describe('AdminReferencePage', () => {
     }));
   });
 
-  it('관리자는 사용자 조직과 직위를 콤보로 선택해 저장한다', async () => {
+  it('관리자는 기존 단일 조직 응답을 기본 소속 목록으로 보정해 저장한다', async () => {
     setAuth(['ADMIN', 'APPLICANT']);
     window.history.pushState({}, '', '/admin/users');
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -425,12 +437,17 @@ describe('AdminReferencePage', () => {
       }
       if (url === '/api/admin/users/3' && init?.method === 'PUT') {
         const body = JSON.parse(String(init.body));
-        expect(body.organizationId).toBe(1);
+        expect(body.organizationId).toBe(2);
+        expect(body.organizationMemberships).toEqual([
+          { organizationId: 3, primary: false, active: true, sortOrder: 10 },
+          { organizationId: 2, primary: true, active: true, sortOrder: 20 }
+        ]);
         expect(body.positionId).toBe(4);
         return new Response(JSON.stringify({
           ...users[0],
           organization_id: body.organizationId,
-          position_id: body.positionId
+          position_id: body.positionId,
+          organizationMemberships: body.organizationMemberships
         }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' }
@@ -448,14 +465,93 @@ describe('AdminReferencePage', () => {
     const row = await screen.findByRole('row', { name: /#3 employee01/ });
     await userEvent.click(within(row).getByRole('button', { name: '수정' }));
 
-    expect(screen.getByRole('combobox', { name: '조직' })).toHaveDisplayValue('개발팀');
+    expect(screen.getByRole('combobox', { name: '1번째 조직' })).toHaveDisplayValue('개발팀');
+    expect(screen.getByRole('radio', { name: '개발팀 대표 소속' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: '개발팀 활성 소속' })).toBeDisabled();
     expect(screen.getByRole('combobox', { name: '직위' })).toHaveDisplayValue('사원');
 
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: '조직' }), '1');
+    await userEvent.click(screen.getByRole('button', { name: '소속 추가' }));
+    expect(screen.getByRole('combobox', { name: '2번째 조직' })).toHaveDisplayValue('더이음');
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: '2번째 조직' }), '2');
+    await userEvent.click(screen.getByRole('radio', { name: '경영지원팀 대표 소속' }));
     await userEvent.selectOptions(screen.getByRole('combobox', { name: '직위' }), '4');
     await userEvent.click(screen.getByRole('button', { name: '저장' }));
 
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/users/3', expect.objectContaining({
+      method: 'PUT'
+    }));
+  });
+
+  it('관리자는 사용자 수정 폼에서 여러 조직 소속을 편집하고 대표 소속을 하나만 저장한다', async () => {
+    setAuth(['ADMIN', 'APPLICANT']);
+    window.history.pushState({}, '', '/admin/users');
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/admin/users' && !init?.method) {
+        return new Response(JSON.stringify(multiOrganizationUsers), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      if (url === '/api/admin/organizations' && !init?.method) {
+        return new Response(JSON.stringify(organizations), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      if (url === '/api/admin/positions' && !init?.method) {
+        return new Response(JSON.stringify(positions), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      if (url === '/api/admin/users/18' && init?.method === 'PUT') {
+        const body = JSON.parse(String(init.body));
+        expect(body.organizationId).toBe(1);
+        expect(body.organizationMemberships).toEqual([
+          { organizationId: 3, primary: false, active: true, sortOrder: 10 },
+          { organizationId: 1, primary: true, active: true, sortOrder: 20 },
+          { organizationId: 2, primary: false, active: false, sortOrder: 30 }
+        ]);
+        return new Response(JSON.stringify({
+          ...multiOrganizationUsers[0],
+          organization_id: body.organizationId,
+          organization_name: '더이음',
+          organizationMemberships: body.organizationMemberships.map((membership: { organizationId: number }) => ({
+            ...membership,
+            organizationName: membership.organizationId === 1 ? '더이음' : '개발팀'
+          }))
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    const row = await screen.findByRole('row', { name: /#18 lead-dev/ });
+    expect(within(row).getByText('대표: 개발팀')).toBeInTheDocument();
+    expect(within(row).getByText('활성: 더이음')).toBeInTheDocument();
+    expect(within(row).getByText('비활성: 경영지원팀')).toBeInTheDocument();
+
+    await userEvent.click(within(row).getByRole('button', { name: '수정' }));
+
+    expect(screen.getByRole('radio', { name: '개발팀 대표 소속' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: '더이음 대표 소속' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: '개발팀 활성 소속' })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: '더이음 활성 소속' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: '경영지원팀 활성 소속' })).not.toBeChecked();
+
+    await userEvent.click(screen.getByRole('radio', { name: '더이음 대표 소속' }));
+    await userEvent.click(screen.getByRole('button', { name: '저장' }));
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/users/18', expect.objectContaining({
       method: 'PUT'
     }));
   });

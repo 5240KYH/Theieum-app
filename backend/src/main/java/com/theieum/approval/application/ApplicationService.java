@@ -26,7 +26,9 @@ import com.theieum.approval.common.ForbiddenOperationException;
 import com.theieum.approval.common.ResourceNotFoundException;
 import com.theieum.approval.common.WorkflowConflictException;
 import com.theieum.approval.notification.NotificationEventService;
+import com.theieum.approval.organization.Organization;
 import com.theieum.approval.user.User;
+import com.theieum.approval.user.UserOrganizationService;
 import com.theieum.approval.user.UserRepository;
 
 import jakarta.persistence.EntityManager;
@@ -39,6 +41,7 @@ public class ApplicationService {
     private final ApplicationApprovalStepRepository approvalStepRepository;
     private final AttachmentRepository attachmentRepository;
     private final UserRepository userRepository;
+    private final UserOrganizationService userOrganizationService;
     private final ApprovalLineResolver approvalLineResolver;
     private final FileStorage fileStorage;
     private final NotificationEventService notificationEventService;
@@ -50,6 +53,7 @@ public class ApplicationService {
             ApplicationApprovalStepRepository approvalStepRepository,
             AttachmentRepository attachmentRepository,
             UserRepository userRepository,
+            UserOrganizationService userOrganizationService,
             ApprovalLineResolver approvalLineResolver,
             FileStorage fileStorage,
             NotificationEventService notificationEventService,
@@ -59,6 +63,7 @@ public class ApplicationService {
         this.approvalStepRepository = approvalStepRepository;
         this.attachmentRepository = attachmentRepository;
         this.userRepository = userRepository;
+        this.userOrganizationService = userOrganizationService;
         this.approvalLineResolver = approvalLineResolver;
         this.fileStorage = fileStorage;
         this.notificationEventService = notificationEventService;
@@ -72,10 +77,15 @@ public class ApplicationService {
         if (approvalType == null || !approvalType.isActive()) {
             throw new ResourceNotFoundException("Active approval type not found: " + command.approvalTypeId());
         }
+        long approvalOrganizationId = resolveApprovalOrganizationId(
+                applicant.getId(),
+                command.approvalOrganizationId());
+        Organization approvalOrganization = entityManager.getReference(Organization.class, approvalOrganizationId);
 
         return applicationRepository.save(new Application(
                 applicant,
                 approvalType,
+                approvalOrganization,
                 command.applicationDate(),
                 command.receiptDate(),
                 command.vendor(),
@@ -96,9 +106,14 @@ public class ApplicationService {
         if (approvalType == null || !approvalType.isActive()) {
             throw new ResourceNotFoundException("Active approval type not found: " + command.approvalTypeId());
         }
+        long approvalOrganizationId = resolveApprovalOrganizationId(
+                application.getApplicant().getId(),
+                command.approvalOrganizationId());
+        Organization approvalOrganization = entityManager.getReference(Organization.class, approvalOrganizationId);
 
         application.updateDraft(
                 approvalType,
+                approvalOrganization,
                 command.applicationDate(),
                 command.receiptDate(),
                 command.vendor(),
@@ -121,9 +136,10 @@ public class ApplicationService {
     }
 
     @Transactional(readOnly = true)
-    public List<ApprovalPreviewStep> previewApprovalLine(long approvalTypeId, long applicantId) {
+    public List<ApprovalPreviewStep> previewApprovalLine(long approvalTypeId, long applicantId, long approvalOrganizationId) {
         findActiveUser(applicantId);
-        List<ResolvedApprover> approvers = approvalLineResolver.resolve(approvalTypeId, applicantId);
+        userOrganizationService.requireActiveMembership(applicantId, approvalOrganizationId);
+        List<ResolvedApprover> approvers = approvalLineResolver.resolve(approvalTypeId, applicantId, approvalOrganizationId);
         Map<Long, User> usersById = userRepository.findAllById(
                         approvers.stream().map(ResolvedApprover::userId).toList())
                 .stream()
@@ -186,7 +202,8 @@ public class ApplicationService {
 
         List<ResolvedApprover> approvers = approvalLineResolver.resolve(
                 application.getApprovalType().getId(),
-                application.getApplicant().getId());
+                application.getApplicant().getId(),
+                application.getApprovalOrganization().getId());
         List<ApplicationApprovalStep> approvalSteps = java.util.stream.IntStream.range(0, approvers.size())
                 .mapToObj(index -> {
                     ResolvedApprover approver = approvers.get(index);
@@ -316,6 +333,18 @@ public class ApplicationService {
                 .orElseThrow(() -> new ResourceNotFoundException("Active user not found: " + userId));
     }
 
+    private long resolveApprovalOrganizationId(long applicantId, Long approvalOrganizationId) {
+        if (approvalOrganizationId != null) {
+            return userOrganizationService.requireActiveMembership(applicantId, approvalOrganizationId);
+        }
+        return userOrganizationService.findActiveApprovalOrganizations(applicantId)
+                .stream()
+                .filter(UserOrganizationService.ApprovalOrganizationSummary::primary)
+                .findFirst()
+                .orElseThrow(() -> new ForbiddenOperationException("신청자의 활성 소속이 아닙니다: " + applicantId))
+                .organizationId();
+    }
+
     private void validateApplicationInApproval(Application application) {
         if (application.getStatus() != ApplicationStatus.IN_APPROVAL) {
             throw new WorkflowConflictException("Only in-approval applications can be approved");
@@ -395,22 +424,47 @@ public class ApplicationService {
     public record CreateDraftCommand(
             Long applicantId,
             Long approvalTypeId,
+            Long approvalOrganizationId,
             LocalDate applicationDate,
             LocalDate receiptDate,
             String vendor,
             BigDecimal amount,
             String description) {
+
+        public CreateDraftCommand(
+                Long applicantId,
+                Long approvalTypeId,
+                LocalDate applicationDate,
+                LocalDate receiptDate,
+                String vendor,
+                BigDecimal amount,
+                String description) {
+            this(applicantId, approvalTypeId, null, applicationDate, receiptDate, vendor, amount, description);
+        }
     }
 
     public record UpdateDraftCommand(
             Long applicationId,
             Long actorId,
             Long approvalTypeId,
+            Long approvalOrganizationId,
             LocalDate applicationDate,
             LocalDate receiptDate,
             String vendor,
             BigDecimal amount,
             String description) {
+
+        public UpdateDraftCommand(
+                Long applicationId,
+                Long actorId,
+                Long approvalTypeId,
+                LocalDate applicationDate,
+                LocalDate receiptDate,
+                String vendor,
+                BigDecimal amount,
+                String description) {
+            this(applicationId, actorId, approvalTypeId, null, applicationDate, receiptDate, vendor, amount, description);
+        }
     }
 
     public record ApprovalPreviewStep(int stepOrder, Long approverId, String approverName) {

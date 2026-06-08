@@ -165,6 +165,10 @@ export function ApplicationDetailPage() {
                   <dd>{formatMoney(application.amount)}</dd>
                 </div>
                 <div>
+                  <dt>결재 기준 조직</dt>
+                  <dd>{application.approvalOrganizationName}</dd>
+                </div>
+                <div>
                   <dt>현재 결재자</dt>
                   <dd>{currentApprover(application)}</dd>
                 </div>

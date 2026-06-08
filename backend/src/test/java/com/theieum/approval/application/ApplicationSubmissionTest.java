@@ -43,6 +43,7 @@ class ApplicationSubmissionTest {
         Application application = applicationService.createDraft(new ApplicationService.CreateDraftCommand(
                 3L,
                 1L,
+                3L,
                 LocalDate.of(2026, 6, 3),
                 LocalDate.of(2026, 6, 2),
                 "테스트 상점",
@@ -102,6 +103,7 @@ class ApplicationSubmissionTest {
         Application application = applicationService.createDraft(new ApplicationService.CreateDraftCommand(
                 3L,
                 1L,
+                3L,
                 LocalDate.of(2026, 6, 3),
                 LocalDate.of(2026, 6, 2),
                 "테스트 상점",
@@ -167,6 +169,53 @@ class ApplicationSubmissionTest {
                         new byte[] {1, 2, 3, 4}))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Receipt attachment must be an image");
+    }
+
+    @Test
+    void draftStoresSelectedApprovalOrganization() {
+        jdbcTemplate.update(
+                """
+                insert into user_organizations (user_id, organization_id, primary_flag, sort_order, active)
+                values (?, ?, false, 20, true)
+                on conflict (user_id, organization_id)
+                do update set active = true, primary_flag = false, sort_order = 20
+                """,
+                3L,
+                4L);
+
+        Application application = applicationService.createDraft(new ApplicationService.CreateDraftCommand(
+                3L,
+                1L,
+                4L,
+                LocalDate.of(2026, 6, 3),
+                LocalDate.of(2026, 6, 2),
+                "선택 조직 상점",
+                new BigDecimal("12500.00"),
+                "선택 조직 저장"));
+
+        assertThat(application.getApprovalOrganization().getId()).isEqualTo(4L);
+        Long approvalOrganizationId = jdbcTemplate.queryForObject(
+                "select approval_organization_id from applications where id = ?",
+                Long.class,
+                application.getId());
+        assertThat(approvalOrganizationId).isEqualTo(4L);
+    }
+
+    @Test
+    void draftRejectsApprovalOrganizationOutsideApplicantMemberships() {
+        jdbcTemplate.update("delete from user_organizations where user_id = ? and organization_id = ?", 3L, 4L);
+
+        assertThatThrownBy(() -> applicationService.createDraft(new ApplicationService.CreateDraftCommand(
+                        3L,
+                        1L,
+                        4L,
+                        LocalDate.of(2026, 6, 3),
+                        LocalDate.of(2026, 6, 2),
+                        "선택 불가 조직 상점",
+                        new BigDecimal("12500.00"),
+                        "선택 불가 조직 거부")))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("신청자의 활성 소속이 아닙니다");
     }
 
     @Test
@@ -252,6 +301,7 @@ class ApplicationSubmissionTest {
                 application.getId(),
                 3L,
                 1L,
+                3L,
                 LocalDate.of(2026, 6, 4),
                 LocalDate.of(2026, 6, 3),
                 "재작성 상점",
@@ -300,6 +350,20 @@ class ApplicationSubmissionTest {
                 303L,
                 301L);
         jdbcTemplate.update(
+                """
+                insert into user_organizations (user_id, organization_id, primary_flag, sort_order, active)
+                values
+                    (?, ?, true, 10, true),
+                    (?, ?, true, 10, true),
+                    (?, ?, true, 10, true)
+                """,
+                301L,
+                301L,
+                302L,
+                301L,
+                303L,
+                301L);
+        jdbcTemplate.update(
                 "insert into approval_types (id, name, description, active) values (?, ?, ?, true)",
                 approvalTypeId,
                 "다중 결재자 제출 테스트",
@@ -328,6 +392,7 @@ class ApplicationSubmissionTest {
         Application application = applicationService.createDraft(new ApplicationService.CreateDraftCommand(
                 301L,
                 approvalTypeId,
+                301L,
                 LocalDate.of(2026, 6, 3),
                 LocalDate.of(2026, 6, 2),
                 "테스트 상점",
@@ -377,6 +442,7 @@ class ApplicationSubmissionTest {
         return applicationService.createDraft(new ApplicationService.CreateDraftCommand(
                 3L,
                 1L,
+                3L,
                 LocalDate.of(2026, 6, 3),
                 LocalDate.of(2026, 6, 2),
                 "테스트 상점",

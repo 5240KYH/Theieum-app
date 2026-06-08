@@ -775,6 +775,7 @@ class ApiAuthorizationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
+                                  "approvalOrganizationId": 3,
                                   "applicationDate": "2026-06-04",
                                   "receiptDate": "2026-06-03",
                                   "vendor": "수정 상점",
@@ -789,6 +790,7 @@ class ApiAuthorizationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
+                                  "approvalOrganizationId": 3,
                                   "applicationDate": "2026-06-04",
                                   "receiptDate": "2026-06-03",
                                   "vendor": "수정 상점",
@@ -822,6 +824,7 @@ class ApiAuthorizationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
+                                  "approvalOrganizationId": 3,
                                   "applicationDate": "2026-06-04",
                                   "receiptDate": "2026-06-03",
                                   "vendor": "재작성 상점",
@@ -839,6 +842,7 @@ class ApiAuthorizationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
+                                  "approvalOrganizationId": 3,
                                   "applicationDate": "2026-06-04",
                                   "receiptDate": "2026-06-03",
                                   "vendor": "진행중 수정",
@@ -854,6 +858,7 @@ class ApiAuthorizationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
+                                  "approvalOrganizationId": 3,
                                   "applicationDate": "2026-06-04",
                                   "receiptDate": "2026-06-03",
                                   "vendor": "완료 수정",
@@ -870,6 +875,7 @@ class ApiAuthorizationTest {
 
         mockMvc.perform(get("/api/applications/approval-preview")
                         .param("approvalTypeId", "1")
+                        .param("approvalOrganizationId", "3")
                         .header("Authorization", bearer(applicantToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].stepOrder").value(2))

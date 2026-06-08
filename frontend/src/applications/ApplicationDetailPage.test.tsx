@@ -34,6 +34,8 @@ const applicationResponse = {
   id: 100,
   applicant: { id: 3, name: '직원01' },
   approvalTypeId: 1,
+  approvalOrganizationId: 3,
+  approvalOrganizationName: '개발팀',
   applicationDate: '2026-06-03',
   receiptDate: '2026-06-02',
   vendor: '문구점',
@@ -127,6 +129,8 @@ describe('ApplicationDetailPage', () => {
     expect(preview).toHaveAttribute('src', 'blob:receipt-preview');
     expect(screen.getByText('receipt.png')).toBeInTheDocument();
     expect(screen.getByText('receipt-2.png')).toBeInTheDocument();
+    expect(screen.getByText('결재 기준 조직')).toBeInTheDocument();
+    expect(screen.getByText('개발팀')).toBeInTheDocument();
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(

@@ -49,9 +49,9 @@ class AdminHardDeleteServiceTest {
         long userId = createUser("referenced-user-target", 2L, 2L, "APPLICANT");
         jdbcTemplate.update("""
                 insert into applications (
-                    applicant_id, approval_type_id, application_date, receipt_date,
+                    applicant_id, approval_type_id, approval_organization_id, application_date, receipt_date,
                     vendor, amount, description, status
-                ) values (?, 1, ?, ?, '테스트 가맹점', 1000, '참조 테스트', 'DRAFT')
+                ) values (?, 1, 2, ?, ?, '테스트 가맹점', 1000, '참조 테스트', 'DRAFT')
                 """, userId, LocalDate.now(), LocalDate.now());
 
         assertThatThrownBy(() -> service.hardDeleteUser(userId))
@@ -79,6 +79,53 @@ class AdminHardDeleteServiceTest {
         service.hardDeleteOrganization(organizationId);
 
         assertThat(count("select count(*) from organizations where id = ?", organizationId)).isZero();
+    }
+
+    @Test
+    void hardDeleteOrganizationRejectsUserMembershipReferences() {
+        long organizationId = jdbcTemplate.queryForObject("""
+                insert into organizations (name, parent_id, level_no, sort_order, active)
+                values ('겸직 소속 조직', null, 1, 999, true)
+                returning id
+                """, Long.class);
+        long userId = createUser("membership-user-target", 2L, 2L, "APPLICANT");
+        jdbcTemplate.update("""
+                insert into user_organizations (user_id, organization_id, primary_flag, active, sort_order)
+                values (?, ?, false, true, 20)
+                """, userId, organizationId);
+
+        assertThatThrownBy(() -> service.hardDeleteOrganization(organizationId))
+                .isInstanceOf(WorkflowConflictException.class)
+                .hasMessageContaining("소속 사용자가 있는 조직");
+
+        assertThat(count("select count(*) from organizations where id = ?", organizationId)).isOne();
+    }
+
+    @Test
+    void hardDeleteOrganizationRejectsApplicationApprovalOrganizationReferences() {
+        long organizationId = jdbcTemplate.queryForObject("""
+                insert into organizations (name, parent_id, level_no, sort_order, active)
+                values ('신청서 결재 기준 조직', null, 1, 999, true)
+                returning id
+                """, Long.class);
+        long userId = createUser("approval-organization-applicant", 2L, 2L, "APPLICANT");
+        jdbcTemplate.update("""
+                insert into user_organizations (user_id, organization_id, primary_flag, active, sort_order)
+                values (?, ?, false, true, 20)
+                """, userId, organizationId);
+        jdbcTemplate.update("""
+                insert into applications (
+                    applicant_id, approval_type_id, approval_organization_id, application_date, receipt_date,
+                    vendor, amount, description, status
+                ) values (?, 1, ?, ?, ?, '테스트 가맹점', 1000, '조직 참조 테스트', 'DRAFT')
+                """, userId, organizationId, LocalDate.now(), LocalDate.now());
+        jdbcTemplate.update("delete from user_organizations where user_id = ? and organization_id = ?", userId, organizationId);
+
+        assertThatThrownBy(() -> service.hardDeleteOrganization(organizationId))
+                .isInstanceOf(WorkflowConflictException.class)
+                .hasMessageContaining("신청서에서 결재 기준 조직으로 사용 중인 조직");
+
+        assertThat(count("select count(*) from organizations where id = ?", organizationId)).isOne();
     }
 
     @Test
@@ -142,7 +189,7 @@ class AdminHardDeleteServiceTest {
     }
 
     private long createUser(String loginId, long organizationId, long positionId, String roles) {
-        return jdbcTemplate.queryForObject("""
+        Long userId = jdbcTemplate.queryForObject("""
                 insert into users (
                     login_id, password_hash, name, email, organization_id, position_id, roles, active
                 ) values (?, 'test-password-hash', ?, ?, ?, ?, ?, true)
@@ -155,6 +202,11 @@ class AdminHardDeleteServiceTest {
                 organizationId,
                 positionId,
                 roles);
+        jdbcTemplate.update("""
+                insert into user_organizations (user_id, organization_id, primary_flag, active, sort_order)
+                values (?, ?, true, true, 10)
+                """, userId, organizationId);
+        return userId;
     }
 
     private int count(String sql, Object... args) {

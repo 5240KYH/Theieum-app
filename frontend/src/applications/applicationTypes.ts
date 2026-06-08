@@ -19,6 +19,14 @@ export interface ApprovalPreviewStep {
   approver: UserSummary;
 }
 
+export interface ApprovalOrganizationSummary {
+  id: number;
+  name: string;
+  parentId: number | null;
+  levelNo: number;
+  primary: boolean;
+}
+
 export interface ApprovalHistoryResponse {
   id: number;
   stepOrder: number | null;
@@ -35,6 +43,8 @@ export interface ApplicationResponse {
   id: number;
   applicant: UserSummary;
   approvalTypeId: number;
+  approvalOrganizationId: number;
+  approvalOrganizationName: string;
   applicationDate: string;
   receiptDate: string;
   vendor: string;
@@ -60,6 +70,7 @@ export interface AttachmentResponse {
 
 export interface CreateApplicationPayload {
   approvalTypeId?: number;
+  approvalOrganizationId: number;
   applicationDate: string;
   receiptDate: string;
   vendor: string;

@@ -1,10 +1,14 @@
 package com.theieum.approval.approval;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import com.theieum.approval.user.UserOrganizationService;
 
 import jakarta.persistence.EntityManager;
 
@@ -13,15 +17,23 @@ import jakarta.persistence.EntityManager;
 public class ApprovalLineResolver {
 
     private final EntityManager entityManager;
+    private final UserOrganizationService userOrganizationService;
 
-    public ApprovalLineResolver(EntityManager entityManager) {
+    public ApprovalLineResolver(EntityManager entityManager, UserOrganizationService userOrganizationService) {
         this.entityManager = entityManager;
+        this.userOrganizationService = userOrganizationService;
     }
 
     public List<ResolvedApprover> resolve(long approvalTypeId, long applicantId) {
         Long organizationId = findApplicantOrganizationId(applicantId);
+        return resolve(approvalTypeId, applicantId, organizationId);
+    }
 
-        List<ResolvedApprover> exceptionApprovers = findOrganizationExceptionApprovers(approvalTypeId, organizationId);
+    public List<ResolvedApprover> resolve(long approvalTypeId, long applicantId, long approvalOrganizationId) {
+        long organizationId = userOrganizationService.requireActiveMembership(applicantId, approvalOrganizationId);
+
+        List<ResolvedApprover> exceptionApprovers = deduplicateApprovers(
+                findOrganizationExceptionApprovers(approvalTypeId, organizationId));
         if (!exceptionApprovers.isEmpty()) {
             return exceptionApprovers;
         }
@@ -37,6 +49,7 @@ public class ApprovalLineResolver {
             }
         }
 
+        approvers = deduplicateApprovers(approvers);
         if (approvers.isEmpty()) {
             throw new IllegalStateException("Approval line has no approvers: " + approvalTypeId);
         }
@@ -132,9 +145,11 @@ public class ApprovalLineResolver {
                         """
                         select users.id
                         from users
+                        join user_organizations uo on uo.user_id = users.id
                         join positions on positions.id = users.position_id
                         where users.position_id = ?
-                          and users.organization_id = ?
+                          and uo.organization_id = ?
+                          and uo.active = true
                           and users.active = true
                         order by positions.rank_order asc, users.id asc
                         """)
@@ -148,6 +163,15 @@ public class ApprovalLineResolver {
         return userIds.stream()
                 .map(userId -> new ResolvedApprover(toLong(userId), step.getStepOrder(), step.getStepType()))
                 .toList();
+    }
+
+    private List<ResolvedApprover> deduplicateApprovers(List<ResolvedApprover> approvers) {
+        Map<Long, ResolvedApprover> uniqueApprovers = new LinkedHashMap<>();
+        for (ResolvedApprover approver : approvers) {
+            uniqueApprovers.putIfAbsent(approver.userId(), approver);
+        }
+
+        return List.copyOf(uniqueApprovers.values());
     }
 
     private Long resolveOrganizationScope(String organizationScope, long applicantOrganizationId) {

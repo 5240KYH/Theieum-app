@@ -43,7 +43,15 @@ import {
 
 type AdminReferenceKind = 'users' | 'organizations' | 'positions' | 'approvalLines' | 'approvalOrgExceptions';
 type ReferenceItem = AdminUser | AdminOrganization | AdminPosition | AdminApprovalLine | AdminApprovalOrgException;
-type DraftValue = string | boolean;
+interface UserOrganizationMembershipDraft {
+  organizationId: string;
+  organizationName?: string;
+  primary: boolean;
+  active: boolean;
+  sortOrder: string;
+}
+
+type DraftValue = string | boolean | UserOrganizationMembershipDraft[];
 type Draft = Record<string, DraftValue>;
 
 interface AdminReferencePageProps {
@@ -221,6 +229,7 @@ function initialDraft(kind: AdminReferenceKind, item?: ReferenceItem): Draft {
       name: user.name,
       email: user.email,
       organizationId: String(user.organization_id),
+      organizationMemberships: normalizeUserMemberships(user),
       positionId: String(user.position_id),
       roles: user.roles,
       active: user.active
@@ -356,18 +365,98 @@ function serializeApprovalLineSteps(steps: EditableApprovalLineStep[]) {
   }).join('\n');
 }
 
+function userOrganizationMembershipDrafts(value: DraftValue | undefined): UserOrganizationMembershipDraft[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function membershipOrganizationName(
+  membership: Pick<UserOrganizationMembershipDraft, 'organizationId' | 'organizationName'>,
+  organizations: AdminOrganization[]
+) {
+  return membership.organizationName
+    ?? organizations.find((organization) => String(organization.id) === membership.organizationId)?.name
+    ?? `#${membership.organizationId}`;
+}
+
+function normalizePrimaryMembership(memberships: UserOrganizationMembershipDraft[]) {
+  const primaryIndex = memberships.findIndex((membership) => membership.primary);
+  return memberships.map((membership, index) => ({
+    ...membership,
+    primary: primaryIndex >= 0 ? index === primaryIndex : index === 0
+  }));
+}
+
+function fallbackMembership(organizationId: string, organizationName?: string): UserOrganizationMembershipDraft {
+  return {
+    organizationId,
+    organizationName,
+    primary: true,
+    active: true,
+    sortOrder: '10'
+  };
+}
+
+function normalizeUserMemberships(user: AdminUser): UserOrganizationMembershipDraft[] {
+  const memberships = user.organizationMemberships ?? [];
+  if (memberships.length > 0) {
+    return normalizePrimaryMembership(
+      memberships
+        .slice()
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.organizationId - b.organizationId)
+        .map((membership) => ({
+          organizationId: String(membership.organizationId),
+          organizationName: membership.organizationName,
+          primary: membership.primary,
+          active: membership.active,
+          sortOrder: String(membership.sortOrder)
+        }))
+    );
+  }
+
+  return [fallbackMembership(String(user.organization_id), user.organization_name)];
+}
+
+function primaryOrganizationId(memberships: UserOrganizationMembershipDraft[], fallbackOrganizationId: DraftValue | undefined) {
+  return memberships.find((membership) => membership.primary)?.organizationId
+    ?? memberships[0]?.organizationId
+    ?? String(fallbackOrganizationId ?? '');
+}
+
+function serializeUserMemberships(memberships: UserOrganizationMembershipDraft[]) {
+  return normalizePrimaryMembership(memberships)
+    .filter((membership) => membership.organizationId)
+    .map((membership, index) => ({
+      organizationId: Number(membership.organizationId),
+      primary: membership.primary,
+      active: membership.active,
+      sortOrder: Number(membership.sortOrder || (index + 1) * 10)
+    }));
+}
+
+function userMembershipSummary(user: AdminUser) {
+  return normalizeUserMemberships(user)
+    .map((membership) => {
+      const label = membership.primary
+        ? '대표'
+        : membership.active ? '활성' : '비활성';
+      return `${label}: ${membership.organizationName ?? `#${membership.organizationId}`}`;
+    });
+}
+
 function isRequiredField(field: FieldConfig) {
   return field.type !== 'checkbox' && field.key !== 'parentId';
 }
 
 function buildPayload(kind: AdminReferenceKind, draft: Draft, isCreating: boolean) {
   if (kind === 'users') {
+    const organizationMemberships = serializeUserMemberships(userOrganizationMembershipDrafts(draft.organizationMemberships));
     return {
       loginId: String(draft.loginId ?? ''),
       ...(isCreating ? { password: String(draft.password ?? '') } : {}),
       name: String(draft.name ?? ''),
       email: String(draft.email ?? ''),
-      organizationId: requiredNumber(draft.organizationId),
+      organizationId: requiredNumber(primaryOrganizationId(userOrganizationMembershipDrafts(draft.organizationMemberships), draft.organizationId)),
+      organizationMemberships,
       positionId: requiredNumber(draft.positionId),
       roles: String(draft.roles ?? 'APPLICANT'),
       active: Boolean(draft.active)
@@ -563,9 +652,19 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
 
   function applyDefaultSelectValues(current: Draft) {
     if (kind === 'users') {
+      const organizationId = String(current.organizationId || firstId(organizations));
+      const organizationMemberships = userOrganizationMembershipDrafts(current.organizationMemberships);
       return {
         ...current,
-        organizationId: current.organizationId || firstId(organizations),
+        organizationId,
+        organizationMemberships: organizationMemberships.length > 0
+          ? organizationMemberships
+          : organizationId
+            ? [fallbackMembership(
+              organizationId,
+              organizations.find((organization) => String(organization.id) === organizationId)?.name
+            )]
+            : [],
         positionId: current.positionId || firstId(positions)
       };
     }
@@ -817,17 +916,17 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
                 }
                 if (kind === 'users' && field.key === 'organizationId') {
                   return (
-                    <SelectField
-                      key={field.key}
-                      label={field.label}
-                      required={isRequiredField(field)}
-                      value={String(draft.organizationId ?? '')}
-                      options={organizations.map((organization) => ({
-                        value: String(organization.id),
-                        label: organization.name
-                      }))}
-                      onChange={(value) => updateDraftValue('organizationId', value)}
-                    />
+                    <div className="admin-field wide-admin-field" key={field.key}>
+                      <span>{field.label} {isRequiredField(field) ? <RequiredMark /> : null}</span>
+                      <UserOrganizationMembershipEditor
+                        organizations={organizations}
+                        value={userOrganizationMembershipDrafts(draft.organizationMemberships)}
+                        onChange={(organizationMemberships) => {
+                          updateDraftValue('organizationMemberships', organizationMemberships);
+                          updateDraftValue('organizationId', primaryOrganizationId(organizationMemberships, draft.organizationId));
+                        }}
+                      />
+                    </div>
                   );
                 }
                 if (kind === 'users' && field.key === 'positionId') {
@@ -1101,6 +1200,144 @@ function SelectField({
   );
 }
 
+function UserOrganizationMembershipEditor({
+  organizations,
+  value,
+  onChange
+}: {
+  organizations: AdminOrganization[];
+  value: UserOrganizationMembershipDraft[];
+  onChange: (value: UserOrganizationMembershipDraft[]) => void;
+}) {
+  const memberships = normalizePrimaryMembership(value);
+  const selectedOrganizationIds = new Set(memberships.map((membership) => membership.organizationId));
+  const nextOrganization = organizations.find((organization) => !selectedOrganizationIds.has(String(organization.id)));
+
+  function updateMembership(index: number, nextValue: Partial<UserOrganizationMembershipDraft>) {
+    const next = memberships.map((membership, membershipIndex) => {
+      if (membershipIndex !== index) {
+        return membership;
+      }
+
+      return {
+        ...membership,
+        ...nextValue,
+        active: membership.primary && nextValue.active === false ? true : nextValue.active ?? membership.active
+      };
+    });
+    onChange(normalizePrimaryMembership(next));
+  }
+
+  function updatePrimary(index: number) {
+    onChange(memberships.map((membership, membershipIndex) => ({
+      ...membership,
+      primary: membershipIndex === index,
+      active: membershipIndex === index ? true : membership.active
+    })));
+  }
+
+  function addMembership() {
+    if (!nextOrganization) {
+      return;
+    }
+
+    onChange(normalizePrimaryMembership([
+      ...memberships,
+      {
+        ...fallbackMembership(String(nextOrganization.id), nextOrganization.name),
+        primary: memberships.length === 0,
+        sortOrder: String((memberships.length + 1) * 10)
+      }
+    ]));
+  }
+
+  function removeMembership(index: number) {
+    const next = memberships
+      .filter((_, membershipIndex) => membershipIndex !== index)
+      .map((membership, membershipIndex) => ({
+        ...membership,
+        sortOrder: String((membershipIndex + 1) * 10)
+      }));
+    onChange(normalizePrimaryMembership(next));
+  }
+
+  return (
+    <div className="approval-line-editor">
+      {memberships.map((membership, index) => {
+        const organizationName = membershipOrganizationName(membership, organizations);
+        return (
+          <div className="approval-line-step-row" key={`${membership.organizationId}-${index}`}>
+            <label>
+              <span>{index + 1}번째 조직 <RequiredMark /></span>
+              <select
+                value={membership.organizationId}
+                onChange={(event) => {
+                  const organization = organizations.find((item) => String(item.id) === event.target.value);
+                  updateMembership(index, {
+                    organizationId: event.target.value,
+                    organizationName: organization?.name
+                  });
+                }}
+              >
+                {organizations.map((organization) => (
+                  <option
+                    key={organization.id}
+                    value={organization.id}
+                    disabled={selectedOrganizationIds.has(String(organization.id)) && String(organization.id) !== membership.organizationId}
+                  >
+                    {organization.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="checkbox-option">
+              <input
+                type="radio"
+                name="primary-organization-membership"
+                aria-label={`${organizationName} 대표 소속`}
+                checked={membership.primary}
+                onChange={() => updatePrimary(index)}
+              />
+              <span>대표</span>
+            </label>
+            <label className="checkbox-option">
+              <input
+                type="checkbox"
+                aria-label={`${organizationName} 활성 소속`}
+                checked={membership.primary || membership.active}
+                disabled={membership.primary}
+                onChange={(event) => updateMembership(index, { active: event.target.checked })}
+              />
+              <span>활성</span>
+            </label>
+            <label>
+              <span>{index + 1}번째 정렬 <RequiredMark /></span>
+              <input
+                type="number"
+                value={membership.sortOrder}
+                onChange={(event) => updateMembership(index, { sortOrder: event.target.value })}
+              />
+            </label>
+            <button
+              className="secondary-button danger-button"
+              type="button"
+              onClick={() => removeMembership(index)}
+              disabled={memberships.length === 1}
+            >
+              <Trash2 aria-hidden="true" size={16} />
+              소속 삭제
+            </button>
+          </div>
+        );
+      })}
+      <button className="secondary-button" type="button" onClick={addMembership} disabled={!nextOrganization}>
+        <Plus aria-hidden="true" size={16} />
+        소속 추가
+      </button>
+    </div>
+  );
+}
+
 function ApprovalLineStepsEditor({
   positions,
   users,
@@ -1275,7 +1512,13 @@ function renderCells(kind: AdminReferenceKind, item: ReferenceItem): ReactNode {
         <td>{user.login_id}</td>
         <td>{user.name}</td>
         <td>{user.email}</td>
-        <td>{user.organization_name ?? `#${user.organization_id}`}</td>
+        <td>
+          <div className="definition-grid compact-definition">
+            {userMembershipSummary(user).map((summary) => (
+              <span key={summary}>{summary}</span>
+            ))}
+          </div>
+        </td>
         <td>{user.position_name ?? `#${user.position_id}`}</td>
         <td>{user.roles}</td>
         <td>{statusText(user.active)}</td>

@@ -96,7 +96,7 @@ Vite 개발 서버 주소는 터미널 출력에 표시된다. Docker 실행 기
 
 | 메뉴 | 경로 | 기능 |
 | --- | --- | --- |
-| 사용자 관리 | `/admin/users` | 사용자 계정, 조직, 직위, 역할, 활성 상태 관리 |
+| 사용자 관리 | `/admin/users` | 사용자 계정, 소속 목록, 대표 소속, 직위, 역할, 활성 상태 관리 |
 | 조직 관리 | `/admin/organizations` | 조직명, 상위 조직, 레벨, 정렬, 활성 상태 관리 |
 | 직위 관리 | `/admin/positions` | 직위명, 직위 순서, 정렬, 활성 상태 관리 |
 | 결재선 관리 | `/admin/approval-lines` | 결재 유형별 결재 단계와 결재선 상태 관리 |
@@ -105,6 +105,17 @@ Vite 개발 서버 주소는 터미널 출력에 표시된다. Docker 실행 기
 | 알림 로그 | `/admin/notifications` | 알림 유형, 채널, 발송 상태, 읽음 상태 조회 |
 
 관리자 기준정보 화면은 기준정보 생성, 수정, 비활성화, 완전 삭제를 지원한다. `MANAGER`는 일부 기준정보를 관리할 수 있지만 복구 불가 완전 삭제는 `ADMIN`에게만 허용된다.
+
+### 4.1 사용자 소속 관리
+
+Task 23 다중 소속/겸직 지원 이후 사용자 소속의 원본은 `user_organizations`다. 기존 `users.organization_id`는 목록, 인증 응답, 기존 API 호환을 위한 대표 소속 mirror로 유지한다.
+
+사용자 관리 화면에서 관리자는 사용자별 소속 목록을 편집한다.
+
+- 소속은 여러 개 등록할 수 있으며, 한 사용자에게 대표 소속은 반드시 1개만 지정한다.
+- 대표 소속은 항상 활성 소속이어야 한다. 대표로 지정하면 해당 소속은 비활성으로 저장할 수 없다.
+- 저장 시 대표 소속은 `user_organizations.primary_flag = true`로 저장되고, 같은 트랜잭션에서 `users.organization_id` mirror도 같은 조직 ID로 동기화된다.
+- 기존 단일 소속 API 호환을 위해 `organizationId`는 계속 받지만, 운영상 실제 소속 목록은 `organizationMemberships` 기준으로 확인한다.
 
 ## 5. 관리자 이용 방법
 
@@ -148,9 +159,14 @@ Vite 개발 서버 주소는 터미널 출력에 표시된다. Docker 실행 기
 관리자는 신청서 상세에서 아래 항목을 확인할 수 있다.
 
 - 신청자, 신청일, 영수증 일자, 사용처, 금액, 설명
+- 결재 기준 조직
 - 첨부 이미지 미리보기
 - 결재 진행 상태
 - 실제 결재 이력
+
+신청서 작성/수정 화면에서는 `결재 기준 조직`을 선택한다. 선택지는 작성자 본인의 활성 소속으로 제한되며, 기본값은 대표 소속이다. 예상 결재선 미리보기와 실제 제출 시 생성되는 결재선은 모두 같은 선택 조직 기준으로 산정된다.
+
+제출 API는 별도 조직 ID를 받지 않는다. 임시저장 또는 수정 단계에서 저장된 `approvalOrganizationId`를 사용해 제출 시점에 작성자의 활성 소속 여부를 다시 검증하고 결재선을 생성한다.
 
 감사 이력 표의 주요 항목:
 
@@ -260,7 +276,21 @@ curl -X POST http://localhost:8080/api/admin/users \
     "organizationId": 3,
     "positionId": 1,
     "roles": "APPLICANT",
-    "active": true
+    "active": true,
+    "organizationMemberships": [
+      {
+        "organizationId": 3,
+        "primary": true,
+        "active": true,
+        "sortOrder": 10
+      },
+      {
+        "organizationId": 4,
+        "primary": false,
+        "active": true,
+        "sortOrder": 20
+      }
+    ]
   }'
 ```
 
@@ -270,6 +300,8 @@ curl -X POST http://localhost:8080/api/admin/users \
 - `APPROVER`
 - `MANAGER`
 - `ADMIN`
+
+다중 소속 사용자는 `organizationMemberships`에 소속 목록을 넣는다. 대표 소속은 `primary: true`인 항목이며 반드시 활성 상태여야 한다. `organizationId`는 대표 소속 mirror 값으로 유지되므로 `organizationMemberships`의 대표 조직과 같은 값으로 보낸다. `organizationMemberships`를 생략하면 서버는 기존 호환 방식으로 `organizationId` 1개를 대표 활성 소속으로 저장한다.
 
 ### 6.3 조직 생성
 

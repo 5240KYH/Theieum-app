@@ -36,6 +36,7 @@ public class AdminHardDeleteService {
                 "결재선에서 사용 중인 사용자입니다. 비활성화만 가능합니다.");
         requireUnused("select count(*) from approval_org_exceptions where approver_user_id = ?", id,
                 "조직별 예외 결재자에서 사용 중인 사용자입니다. 비활성화만 가능합니다.");
+        jdbcTemplate.update("delete from user_organizations where user_id = ?", id);
         jdbcTemplate.update("delete from users where id = ?", id);
     }
 
@@ -46,6 +47,10 @@ public class AdminHardDeleteService {
                 "하위 조직이 있는 조직입니다. 하위 조직을 먼저 정리해 주세요.");
         requireUnused("select count(*) from users where organization_id = ?", id,
                 "소속 사용자가 있는 조직입니다. 사용자를 먼저 이동하거나 비활성화해 주세요.");
+        requireUnused("select count(*) from user_organizations where organization_id = ?", id,
+                "소속 사용자가 있는 조직입니다. 사용자를 먼저 이동하거나 비활성화해 주세요.");
+        requireUnused("select count(*) from applications where approval_organization_id = ?", id,
+                "신청서에서 결재 기준 조직으로 사용 중인 조직입니다. 비활성화만 가능합니다.");
         requireUnused("select count(*) from approval_org_exceptions where organization_id = ?", id,
                 "조직별 예외 결재자에서 사용 중인 조직입니다. 예외 설정을 먼저 정리해 주세요.");
         jdbcTemplate.update("delete from organizations where id = ?", id);

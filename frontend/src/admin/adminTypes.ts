@@ -18,6 +18,14 @@ export interface AdminNotificationEvent {
   read: boolean;
 }
 
+export interface AdminUserOrganizationMembership {
+  organizationId: number;
+  organizationName?: string;
+  primary: boolean;
+  active: boolean;
+  sortOrder: number;
+}
+
 export interface AdminUser {
   id: number;
   login_id: string;
@@ -29,6 +37,7 @@ export interface AdminUser {
   position_name: string;
   roles: string;
   active: boolean;
+  organizationMemberships?: AdminUserOrganizationMembership[];
 }
 
 export interface AdminOrganization {

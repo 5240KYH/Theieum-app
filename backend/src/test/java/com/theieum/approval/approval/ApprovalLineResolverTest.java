@@ -96,6 +96,25 @@ class ApprovalLineResolverTest {
     }
 
     @Test
+    void organizationPositionStepUsesActiveMembershipsNotOnlyPrimaryMirror() {
+        long approvalTypeId = 109L;
+        insertOrganization(150L, "겸직 결재자 대표 조직", null, 1, 150);
+        insertOrganization(151L, "겸직 결재 대상 조직", null, 1, 151);
+        insertUser(150L, "multi-approver", "겸직결재자", 150L, 4L);
+        insertUserOrganization(150L, 151L, false, 20, true);
+        insertUser(151L, "multi-applicant", "겸직신청자", 151L, 1L);
+        insertApprovalType(approvalTypeId, "겸직 결재자 조회 테스트");
+        insertApprovalLine(109L, approvalTypeId, "겸직 결재자 결재선");
+        insertOrgPositionStep(112L, 109L, 1, 4L);
+
+        List<ResolvedApprover> approvers = resolver.resolve(approvalTypeId, 151L, 151L);
+
+        assertThat(approvers)
+                .extracting(ResolvedApprover::userId)
+                .containsExactly(150L);
+    }
+
+    @Test
     void parentOrganizationScopeUsesImmediateParentOrganization() {
         long approvalTypeId = 106L;
         insertOrganization(130L, "상위 조직 테스트팀", 1L, 2, 130);
@@ -130,6 +149,62 @@ class ApprovalLineResolverTest {
         assertThat(approvers)
                 .extracting(ResolvedApprover::userId)
                 .containsExactly(140L);
+    }
+
+    @Test
+    void selectedTeamResolvesApplicantParentAndRootScopes() {
+        long approvalTypeId = 201L;
+        insertOrganization(210L, "선택 스코프 최상위", null, 1, 210);
+        insertOrganization(211L, "선택 스코프 부", 210L, 2, 10);
+        insertOrganization(212L, "선택 스코프 팀", 211L, 3, 10);
+        insertUser(210L, "selected-scope-root", "선택최상위결재자", 210L, 5L);
+        insertUser(211L, "selected-scope-dept", "선택부결재자", 211L, 4L);
+        insertUser(212L, "selected-scope-team", "선택팀결재자", 212L, 4L);
+        insertUser(213L, "selected-scope-applicant", "선택조직신청자", 211L, 1L);
+        insertUserOrganization(213L, 212L, false, 20, true);
+        insertApprovalType(approvalTypeId, "선택 조직 스코프 테스트");
+        insertApprovalLine(201L, approvalTypeId, "선택 조직 스코프 결재선");
+        insertOrgPositionStep(201L, 201L, 1, "APPLICANT_ORG", 4L);
+        insertOrgPositionStep(202L, 201L, 2, "PARENT_ORG", 4L);
+        insertOrgPositionStep(203L, 201L, 3, "ROOT_ORG", 5L);
+
+        List<ResolvedApprover> approvers = resolver.resolve(approvalTypeId, 213L, 212L);
+
+        assertThat(approvers)
+                .extracting(ResolvedApprover::userId)
+                .containsExactly(212L, 211L, 210L);
+        assertThat(approvers)
+                .extracting(ResolvedApprover::stepOrder)
+                .containsExactly(1, 2, 3);
+    }
+
+    @Test
+    void selectedDepartmentDeduplicatesSameRootApprover() {
+        long approvalTypeId = 202L;
+        insertOrganization(220L, "부 선택 최상위", null, 1, 220);
+        insertOrganization(221L, "부 선택 부", 220L, 2, 10);
+        insertUser(220L, "selected-department-root", "부선택대표", 220L, 5L);
+        insertUser(221L, "selected-department-applicant", "부선택신청자", 221L, 1L);
+        insertApprovalType(approvalTypeId, "부 선택 중복 제거 테스트");
+        insertApprovalLine(202L, approvalTypeId, "부 선택 중복 제거 결재선");
+        insertOrgPositionStep(204L, 202L, 1, "PARENT_ORG", 5L);
+        insertOrgPositionStep(205L, 202L, 2, "ROOT_ORG", 5L);
+
+        List<ResolvedApprover> approvers = resolver.resolve(approvalTypeId, 221L, 221L);
+
+        assertThat(approvers)
+                .extracting(ResolvedApprover::userId)
+                .containsExactly(220L);
+        assertThat(approvers)
+                .extracting(ResolvedApprover::stepOrder)
+                .containsExactly(1);
+    }
+
+    @Test
+    void selectedOrganizationMustBeApplicantMembership() {
+        assertThatThrownBy(() -> resolver.resolve(1L, 3L, 4L))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("신청자의 활성 소속이 아닙니다");
     }
 
     @Test
@@ -289,6 +364,25 @@ class ApprovalLineResolverTest {
                 loginId + "@theieum.local",
                 organizationId,
                 positionId);
+        insertUserOrganization(id, organizationId, true, 10, true);
+    }
+
+    private void insertUserOrganization(
+            long userId,
+            long organizationId,
+            boolean primary,
+            int sortOrder,
+            boolean active) {
+        jdbcTemplate.update(
+                """
+                insert into user_organizations (user_id, organization_id, primary_flag, sort_order, active)
+                values (?, ?, ?, ?, ?)
+                """,
+                userId,
+                organizationId,
+                primary,
+                sortOrder,
+                active);
     }
 
     @TestConfiguration

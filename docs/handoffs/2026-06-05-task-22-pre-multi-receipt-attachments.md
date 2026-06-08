@@ -3,7 +3,7 @@
 작성일: 2026-06-05, Asia/Seoul
 작업 경로: `/Users/kyh/theieum`
 현재 브랜치: `main`
-최종 커밋: 미커밋 작업 상태
+최종 커밋: `ef2de84 feat: harden staging attachments and calendar ux`
 
 ## 재시작 프롬프트
 
@@ -32,6 +32,8 @@ docs/staging-trial-data-and-attachments.md
 - ZIP entry 이름은 `YYYY-MM/application-<id>/<receipt-date>-<vendor>-<attachment-id>-<original-filename>` 형식이다.
 - 매니저는 월별 첨부 ZIP API에 접근할 수 없고 403을 받는다.
 - 스테이징/운영 문서의 기본 첨부 정책을 신청서당 최대 10개, 파일당 5MB 이하로 갱신했다.
+- 모바일 대시보드/캘린더에서 일정 칩 또는 날짜 영역을 누르면 아래 세부 일정이 해당 날짜로 바뀌도록 보정했다.
+- 읽기 전용 일정 칩은 편집/입력 버튼이 아니라 날짜 선택 버튼으로만 동작한다.
 
 ## 주요 변경 파일
 
@@ -48,6 +50,8 @@ frontend/src/app/styles.css
 frontend/src/applications/ApplicationForm.test.tsx
 frontend/src/applications/ApplicationDetailPage.test.tsx
 frontend/src/admin/AdminApplicationsPage.test.tsx
+frontend/src/calendar/CalendarBoard.tsx
+frontend/src/dashboard/DashboardPage.test.tsx
 .env.staging.example
 docker-compose.staging.yml
 README.md
@@ -63,7 +67,7 @@ docs/staging-trial-data-and-attachments.md
 cd frontend && npm run test -- ApplicationForm.test.tsx ApplicationDetailPage.test.tsx AdminApplicationsPage.test.tsx
 cd frontend && npm run build
 cd frontend && npm run test
-docker run --rm --network host --user 501:20 -e GRADLE_USER_HOME=/gradle-cache -v /private/tmp/theieum-gradle-cache:/gradle-cache -v /private/tmp:/private/tmp -v /Users/kyh/theieum:/workspace -w /workspace/backend eclipse-temurin:21-jdk ./gradlew test
+docker run --rm -v /Users/kyh/theieum:/workspace -w /workspace/backend eclipse-temurin:21 ./gradlew test
 docker compose --env-file .env.staging.example -f docker-compose.staging.yml config
 git diff --check
 rg -n "영수증 이미지 1개|ATTACHMENT_MAX_FILES_PER_APPLICATION=1([^0-9]|$)" docs README.md .env.staging.example docker-compose.staging.yml backend/src/main/resources/application.yml
@@ -72,15 +76,16 @@ rg -n "영수증 이미지 1개|ATTACHMENT_MAX_FILES_PER_APPLICATION=1([^0-9]|$)
 결과:
 
 - 프론트 대상 테스트 21개 통과
-- 프론트 전체 테스트 64개 통과
+- 프론트 전체 테스트 66개 통과
 - 프론트 타입 체크와 production build 통과
-- 백엔드 전체 테스트 91개 통과
+- 백엔드 전체 테스트 통과
 - 스테이징 compose 렌더링에서 `ATTACHMENT_MAX_FILES_PER_APPLICATION: "10"` 확인
+- 모바일 412x915 Chromium에서 일정 칩 클릭과 빈 날짜 영역 클릭 시 세부 일정 전환 확인
 - `git diff --check` 통과
 - 오래된 `영수증 이미지 1개` 표기는 Task 21 당시 정책을 설명하는 과거 설계/인수인계 문서에만 남아 있다.
+- 작업 묶음은 `ef2de84`로 커밋되어 `origin/main`에 푸시되었다.
 
-## 남은 확인
+## 후속 상태
 
-- 실제 브라우저에서 새 신청 다중 업로드, 상세 확대 미리보기, 관리자 월별 다운로드 버튼을 한 번 더 시각 확인하면 좋다.
-- 현 작업은 아직 커밋하지 않았다. 사용자가 최종 확인 후 직접 commit/push할 수 있도록 작업트리에 남겨두었다.
-
+- 실제 체험 운영 전 새 신청 다중 업로드, 상세 확대 미리보기, 관리자 월별 다운로드 버튼 시각 확인은 `docs/handoffs/2026-06-08-task-22-final-user-scenario-check.md`에서 완료했다.
+- 추가 요청이 없다면 Task 22까지 계획된 기능 구현 task는 종료된 상태로 본다.

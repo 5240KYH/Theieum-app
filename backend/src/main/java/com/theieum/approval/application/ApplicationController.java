@@ -30,6 +30,7 @@ import com.theieum.approval.attachment.Attachment;
 import com.theieum.approval.attachment.AttachmentRepository;
 import com.theieum.approval.attachment.FileStorage;
 import com.theieum.approval.auth.AuthenticatedUser;
+import com.theieum.approval.user.UserOrganizationService;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -47,6 +48,7 @@ public class ApplicationController {
     private final AttachmentRepository attachmentRepository;
     private final FileStorage fileStorage;
     private final ApplicationHardDeleteService applicationHardDeleteService;
+    private final UserOrganizationService userOrganizationService;
     private final long maxReceiptImageBytes;
 
     public ApplicationController(
@@ -57,6 +59,7 @@ public class ApplicationController {
             AttachmentRepository attachmentRepository,
             FileStorage fileStorage,
             ApplicationHardDeleteService applicationHardDeleteService,
+            UserOrganizationService userOrganizationService,
             @Value("${app.attachments.max-image-bytes:5242880}") long maxReceiptImageBytes) {
         this.applicationService = applicationService;
         this.applicationRepository = applicationRepository;
@@ -65,6 +68,7 @@ public class ApplicationController {
         this.attachmentRepository = attachmentRepository;
         this.fileStorage = fileStorage;
         this.applicationHardDeleteService = applicationHardDeleteService;
+        this.userOrganizationService = userOrganizationService;
         this.maxReceiptImageBytes = maxReceiptImageBytes;
     }
 
@@ -82,11 +86,22 @@ public class ApplicationController {
     @Transactional(readOnly = true)
     public List<ApprovalPreviewStepResponse> approvalPreview(
             @AuthenticationPrincipal AuthenticatedUser user,
-            @RequestParam(defaultValue = "1") long approvalTypeId) {
+            @RequestParam(defaultValue = "1") long approvalTypeId,
+            @RequestParam long approvalOrganizationId) {
         requireRole(user, "APPLICANT");
-        return applicationService.previewApprovalLine(approvalTypeId, user.id())
+        return applicationService.previewApprovalLine(approvalTypeId, user.id(), approvalOrganizationId)
                 .stream()
                 .map(ApprovalPreviewStepResponse::from)
+                .toList();
+    }
+
+    @GetMapping("/approval-organizations")
+    @Transactional(readOnly = true)
+    public List<ApprovalOrganizationResponse> approvalOrganizations(@AuthenticationPrincipal AuthenticatedUser user) {
+        requireRole(user, "APPLICANT");
+        return userOrganizationService.findActiveApprovalOrganizations(user.id())
+                .stream()
+                .map(ApprovalOrganizationResponse::from)
                 .toList();
     }
 
@@ -99,6 +114,7 @@ public class ApplicationController {
         Application application = applicationService.createDraft(new ApplicationService.CreateDraftCommand(
                 user.id(),
                 request.approvalTypeId == null ? 1L : request.approvalTypeId,
+                request.approvalOrganizationId,
                 request.applicationDate == null ? LocalDate.now() : request.applicationDate,
                 request.receiptDate,
                 request.vendor,
@@ -118,6 +134,7 @@ public class ApplicationController {
                 id,
                 user.id(),
                 request.approvalTypeId == null ? 1L : request.approvalTypeId,
+                request.approvalOrganizationId,
                 request.applicationDate == null ? LocalDate.now() : request.applicationDate,
                 request.receiptDate,
                 request.vendor,
@@ -249,6 +266,7 @@ public class ApplicationController {
 
     public record CreateApplicationRequest(
             Long approvalTypeId,
+            @NotNull Long approvalOrganizationId,
             LocalDate applicationDate,
             @NotNull LocalDate receiptDate,
             @NotBlank String vendor,
@@ -260,6 +278,8 @@ public class ApplicationController {
             Long id,
             UserSummary applicant,
             Long approvalTypeId,
+            Long approvalOrganizationId,
+            String approvalOrganizationName,
             LocalDate applicationDate,
             LocalDate receiptDate,
             String vendor,
@@ -282,6 +302,8 @@ public class ApplicationController {
                     application.getId(),
                     UserSummary.from(application.getApplicant()),
                     application.getApprovalType().getId(),
+                    application.getApprovalOrganization().getId(),
+                    application.getApprovalOrganization().getName(),
                     application.getApplicationDate(),
                     application.getReceiptDate(),
                     application.getVendor(),
@@ -329,6 +351,23 @@ public class ApplicationController {
 
         static UserSummary from(com.theieum.approval.user.User user) {
             return new UserSummary(user.getId(), user.getName());
+        }
+    }
+
+    public record ApprovalOrganizationResponse(
+            Long id,
+            String name,
+            Long parentId,
+            int levelNo,
+            boolean primary) {
+
+        static ApprovalOrganizationResponse from(UserOrganizationService.ApprovalOrganizationSummary organization) {
+            return new ApprovalOrganizationResponse(
+                    organization.organizationId(),
+                    organization.organizationName(),
+                    organization.parentId(),
+                    organization.levelNo(),
+                    organization.primary());
         }
     }
 

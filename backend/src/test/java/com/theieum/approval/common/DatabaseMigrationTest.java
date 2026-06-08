@@ -2,8 +2,11 @@ package com.theieum.approval.common;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.sql.SQLException;
+import java.time.LocalDate;
 import java.util.List;
 
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.flyway.FlywayMigrationStrategy;
@@ -25,6 +28,9 @@ class DatabaseMigrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private Flyway flyway;
+
     @Test
     void flywayCreatesCoreTablesAndSeedsMvpData() {
         assertTablesExist(
@@ -34,11 +40,19 @@ class DatabaseMigrationTest {
                 "approval_types",
                 "approval_lines",
                 "approval_line_steps",
+                "approval_org_exceptions",
                 "applications",
                 "application_approval_steps",
                 "approval_histories",
                 "attachments",
-                "notification_events");
+                "notification_events",
+                "calendar_events",
+                "user_organizations");
+
+        assertColumnsExist(
+                "applications",
+                "approval_organization_id");
+        assertColumnIsNotNullable("applications", "approval_organization_id");
 
         assertColumnsExist(
                 "notification_events",
@@ -97,6 +111,213 @@ class DatabaseMigrationTest {
                 "select count(*) from approval_org_exceptions where active = true",
                 Integer.class);
         assertThat(activeOrgExceptionCount).isGreaterThanOrEqualTo(1);
+
+        Integer missingPrimaryMembershipCount = jdbcTemplate.queryForObject(
+                """
+                select count(*)
+                from users u
+                where not exists (
+                    select 1
+                    from user_organizations uo
+                    where uo.user_id = u.id
+                      and uo.organization_id = u.organization_id
+                      and uo.primary_flag = true
+                      and uo.active = true
+                )
+                """,
+                Integer.class);
+        assertThat(missingPrimaryMembershipCount).isZero();
+
+        Integer churchOrganizationCount = jdbcTemplate.queryForObject(
+                """
+                select count(*)
+                from organizations
+                where name in (
+                    '더이음사랑의교회',
+                    '예배부',
+                    '찬양팀',
+                    '미디어팀',
+                    '새가족팀',
+                    '중보기도팀',
+                    '총무부',
+                    '기획팀',
+                    '시설팀',
+                    '재정부',
+                    '회계팀',
+                    '감사팀',
+                    '미래준비부',
+                    '이음씨드',
+                    '이음키즈'
+                )
+                """,
+                Integer.class);
+        assertThat(churchOrganizationCount).isEqualTo(15);
+
+        Integer worshipMediaPathCount = jdbcTemplate.queryForObject(
+                """
+                select count(*)
+                from organizations root
+                join organizations department on department.parent_id = root.id
+                join organizations team on team.parent_id = department.id
+                where root.name = '더이음사랑의교회'
+                  and root.parent_id is null
+                  and root.level_no = 1
+                  and root.active = true
+                  and department.name = '예배부'
+                  and department.level_no = 2
+                  and department.active = true
+                  and team.name = '미디어팀'
+                  and team.level_no = 3
+                  and team.active = true
+                """,
+                Integer.class);
+        assertThat(worshipMediaPathCount).isEqualTo(1);
+
+        Integer financeAuditPathCount = jdbcTemplate.queryForObject(
+                """
+                select count(*)
+                from organizations root
+                join organizations department on department.parent_id = root.id
+                join organizations team on team.parent_id = department.id
+                where root.name = '더이음사랑의교회'
+                  and root.parent_id is null
+                  and root.level_no = 1
+                  and root.active = true
+                  and department.name = '재정부'
+                  and department.level_no = 2
+                  and department.active = true
+                  and team.name = '감사팀'
+                  and team.level_no = 3
+                  and team.active = true
+                """,
+                Integer.class);
+        assertThat(financeAuditPathCount).isEqualTo(1);
+
+        Integer activePrimaryIndexCount = jdbcTemplate.queryForObject(
+                """
+                select count(*)
+                from pg_index idx
+                join pg_class index_class on index_class.oid = idx.indexrelid
+                join pg_class table_class on table_class.oid = idx.indrelid
+                join pg_namespace table_schema on table_schema.oid = table_class.relnamespace
+                where table_schema.nspname = 'public'
+                  and table_class.relname = 'user_organizations'
+                  and index_class.relname = 'ux_user_organizations_active_primary'
+                  and idx.indisunique = true
+                  and idx.indpred is not null
+                  and pg_get_indexdef(idx.indexrelid) like '%USING btree (user_id)%'
+                  and lower(regexp_replace(pg_get_expr(idx.indpred, idx.indrelid), '\\s+', '', 'g'))
+                      = '((primary_flag=true)and(active=true))'
+                """,
+                Integer.class);
+        assertThat(activePrimaryIndexCount).isEqualTo(1);
+    }
+
+    @Test
+    void v4MigratesExistingApplicationsToApplicantOrganization() {
+        assertIsDedicatedTestDatabase();
+        flyway.clean();
+        Flyway.configure()
+                .configuration(flyway.getConfiguration())
+                .target("3")
+                .load()
+                .migrate();
+
+        Long applicantId = jdbcTemplate.queryForObject(
+                "select id from users where login_id = ?",
+                Long.class,
+                "employee01");
+        Long applicantOrganizationId = jdbcTemplate.queryForObject(
+                "select organization_id from users where id = ?",
+                Long.class,
+                applicantId);
+        Long applicationId = jdbcTemplate.queryForObject(
+                """
+                insert into applications (
+                    applicant_id, approval_type_id, application_date, receipt_date,
+                    vendor, amount, description, status
+                ) values (?, 1, ?, ?, 'V4 테스트 가맹점', 12345, 'V4 이관 테스트', 'DRAFT')
+                returning id
+                """,
+                Long.class,
+                applicantId,
+                LocalDate.of(2026, 6, 8),
+                LocalDate.of(2026, 6, 8));
+
+        flyway.migrate();
+
+        Long approvalOrganizationId = jdbcTemplate.queryForObject(
+                "select approval_organization_id from applications where id = ?",
+                Long.class,
+                applicationId);
+        assertThat(approvalOrganizationId).isEqualTo(applicantOrganizationId);
+        assertColumnIsNotNullable("applications", "approval_organization_id");
+    }
+
+    @Test
+    void v4ReusesExistingChurchRootWhenSeedingOrganizationTree() {
+        assertIsDedicatedTestDatabase();
+        flyway.clean();
+        Flyway.configure()
+                .configuration(flyway.getConfiguration())
+                .target("3")
+                .load()
+                .migrate();
+
+        jdbcTemplate.update(
+                """
+                insert into organizations (name, parent_id, level_no, sort_order, active)
+                values ('더이음사랑의교회', null, 1, 999, true)
+                """);
+
+        flyway.migrate();
+
+        Integer rootCount = jdbcTemplate.queryForObject(
+                """
+                select count(*)
+                from organizations
+                where name = '더이음사랑의교회'
+                  and parent_id is null
+                """,
+                Integer.class);
+        assertThat(rootCount).isEqualTo(1);
+
+        Integer churchOrganizationTreeCount = jdbcTemplate.queryForObject(
+                """
+                select count(*)
+                from organizations org
+                where org.name = '더이음사랑의교회'
+                   or exists (
+                       select 1
+                       from organizations root
+                       where root.name = '더이음사랑의교회'
+                         and root.parent_id is null
+                         and (
+                             org.parent_id = root.id
+                             or org.parent_id in (
+                                 select department.id
+                                 from organizations department
+                                 where department.parent_id = root.id
+                             )
+                         )
+                   )
+                """,
+                Integer.class);
+        assertThat(churchOrganizationTreeCount).isEqualTo(15);
+
+        Integer worshipMediaPathCount = jdbcTemplate.queryForObject(
+                """
+                select count(*)
+                from organizations root
+                join organizations department on department.parent_id = root.id
+                join organizations team on team.parent_id = department.id
+                where root.name = '더이음사랑의교회'
+                  and root.parent_id is null
+                  and department.name = '예배부'
+                  and team.name = '미디어팀'
+                """,
+                Integer.class);
+        assertThat(worshipMediaPathCount).isEqualTo(1);
     }
 
     private void assertTablesExist(String... tableNames) {
@@ -134,6 +355,35 @@ class DatabaseMigrationTest {
             assertThat(columnCount)
                     .as("column %s.%s should exist", tableName, columnName)
                     .isEqualTo(1);
+        }
+    }
+
+    private void assertColumnIsNotNullable(String tableName, String columnName) {
+        String nullable = jdbcTemplate.queryForObject(
+                """
+                select is_nullable
+                from information_schema.columns
+                where table_schema = 'public'
+                  and table_name = ?
+                  and column_name = ?
+                """,
+                String.class,
+                tableName,
+                columnName);
+
+        assertThat(nullable)
+                .as("column %s.%s should be not null", tableName, columnName)
+                .isEqualTo("NO");
+    }
+
+    private void assertIsDedicatedTestDatabase() {
+        try (var connection = flyway.getConfiguration().getDataSource().getConnection()) {
+            String actualUrl = connection.getMetaData().getURL();
+            if (!TestDatabaseHarness.JDBC_URL.equals(actualUrl)) {
+                throw new IllegalStateException("Refusing to clean non-test database: " + actualUrl);
+            }
+        } catch (SQLException ex) {
+            throw new IllegalStateException("Unable to verify test database before clean", ex);
         }
     }
 

@@ -69,25 +69,24 @@ docker compose --env-file .env.staging.example -f docker-compose.staging.yml con
 - 운영 배포에서는 `db/seed`를 제외하고 운영 계정을 별도로 만든다.
 - 체험자에게 실제 개인정보와 실제 영수증 업로드 금지를 반드시 안내한다.
 - DB와 첨부 volume은 함께 보존하거나 함께 삭제해야 한다. DB만 보존하고 첨부 volume을 삭제하면 이미지 미리보기가 깨진다.
-- 체험 종료 삭제 명령:
+- 체험 종료 삭제 명령. DB/첨부 volume 삭제가 포함되므로 실행 전 명시적 승인이 필요하다.
 
 ```bash
 docker compose --env-file .env.staging -f docker-compose.staging.yml down -v
 ```
 
-## 다음 추천 task
+## 후속 상태
 
-Task 22: 스테이징 체험 운영 전 최종 사용자 시나리오 점검
+Task 22 스테이징 체험 운영 전 최종 사용자 시나리오 점검은 완료되었다.
 
-권장 범위:
+완료된 범위:
 
-- 30명 안팎 계정 배정표 샘플 작성
-- 신청자, 결재자, 매니저, 관리자별 실제 체험 시나리오 1회씩 통과 확인
-- 모바일/PWA에서 신청서 작성, 첨부, 결재, 캘린더 조회 smoke 재확인
-- 실제 Oracle VM 배포 요청 전이면 로컬 Docker 또는 임시 staging URL 기준으로만 진행
+- 다중 영수증 첨부, 상세 확대 미리보기, 관리자 월별 ZIP 다운로드, 모바일 캘린더 클릭 보정을 실제 화면 기준으로 확인했다.
+- 상세 결과는 `docs/handoffs/2026-06-08-task-22-final-user-scenario-check.md`에 남겼다.
+- 추가 요청이 없다면 Task 22까지 계획된 기능 구현 task는 종료된 상태로 본다.
 
 ## 새 채팅 재시작 프롬프트
 
 ```text
-/Users/kyh/theieum 에서 docs/handoff-2026-06-03.md 와 docs/handoffs/2026-06-05-task-21-trial-accounts-attachments.md 를 먼저 읽고, Task 22 스테이징 체험 운영 전 최종 사용자 시나리오 점검을 진행해주세요. git status --short 와 Docker 상태를 먼저 확인하고, 기존 미커밋 변경은 되돌리지 말아주세요.
+/Users/kyh/theieum 에서 docs/handoff-2026-06-03.md 와 docs/handoffs/2026-06-08-task-22-final-user-scenario-check.md 를 먼저 읽고, Task 22까지 완료된 상태를 확인해주세요. git status --short 와 Docker 상태를 먼저 확인하고, 기존 미커밋 변경은 되돌리지 말아주세요.
 ```

@@ -3,6 +3,7 @@ package com.theieum.approval.admin;
 import java.io.ByteArrayOutputStream;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -35,6 +36,8 @@ import com.theieum.approval.approval.ApprovalStepType;
 import com.theieum.approval.attachment.FileStorage;
 import com.theieum.approval.auth.AuthenticatedUser;
 import com.theieum.approval.notification.NotificationEventRepository;
+import com.theieum.approval.user.UserOrganizationService;
+import com.theieum.approval.user.UserOrganizationService.MembershipCommand;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
@@ -59,6 +62,7 @@ public class AdminController {
     private final AdminHardDeleteService adminHardDeleteService;
     private final ApplicationHardDeleteService applicationHardDeleteService;
     private final FileStorage fileStorage;
+    private final UserOrganizationService userOrganizationService;
 
     public AdminController(
             JdbcTemplate jdbcTemplate,
@@ -68,7 +72,8 @@ public class AdminController {
             NotificationEventRepository notificationEventRepository,
             AdminHardDeleteService adminHardDeleteService,
             ApplicationHardDeleteService applicationHardDeleteService,
-            FileStorage fileStorage) {
+            FileStorage fileStorage,
+            UserOrganizationService userOrganizationService) {
         this.jdbcTemplate = jdbcTemplate;
         this.passwordEncoder = passwordEncoder;
         this.applicationService = applicationService;
@@ -77,6 +82,7 @@ public class AdminController {
         this.adminHardDeleteService = adminHardDeleteService;
         this.applicationHardDeleteService = applicationHardDeleteService;
         this.fileStorage = fileStorage;
+        this.userOrganizationService = userOrganizationService;
     }
 
     @GetMapping("/users")
@@ -98,7 +104,9 @@ public class AdminController {
                 join organizations o on o.id = u.organization_id
                 join positions p on p.id = u.position_id
                 order by u.id asc
-                """);
+                """).stream()
+                .map(this::withOrganizationMemberships)
+                .toList();
     }
 
     @PostMapping("/users")
@@ -133,7 +141,8 @@ public class AdminController {
                 request.positionId,
                 request.roles == null || request.roles.isBlank() ? "APPLICANT" : request.roles,
                 request.active == null || request.active);
-        return one("select id, login_id, name, email, organization_id, position_id, roles, active from users where id = ?", id);
+        userOrganizationService.saveMemberships(id, membershipCommands(request.organizationMemberships, request.organizationId));
+        return userRow(id);
     }
 
     @PutMapping("/users/{id}")
@@ -167,6 +176,7 @@ public class AdminController {
                 request.active == null || request.active,
                 id);
         requireUpdated(updated, "User not found: " + id);
+        userOrganizationService.saveMemberships(id, membershipCommands(request.organizationMemberships, request.organizationId));
         return userRow(id);
     }
 
@@ -911,7 +921,48 @@ public class AdminController {
     }
 
     private Map<String, Object> userRow(long id) {
-        return one("select id, login_id, name, email, organization_id, position_id, roles, active from users where id = ?", id);
+        return withOrganizationMemberships(one(
+                """
+                select u.id,
+                       u.login_id,
+                       u.name,
+                       u.email,
+                       u.organization_id,
+                       o.name as organization_name,
+                       u.position_id,
+                       p.name as position_name,
+                       u.roles,
+                       u.active
+                from users u
+                join organizations o on o.id = u.organization_id
+                join positions p on p.id = u.position_id
+                where u.id = ?
+                """,
+                id));
+    }
+
+    private Map<String, Object> withOrganizationMemberships(Map<String, Object> row) {
+        Map<String, Object> response = new LinkedHashMap<>(row);
+        response.put(
+                "organizationMemberships",
+                userOrganizationService.findMemberships(((Number) row.get("id")).longValue()));
+        return response;
+    }
+
+    private List<MembershipCommand> membershipCommands(
+            List<UserOrganizationMembershipRequest> memberships,
+            Long fallbackOrganizationId) {
+        if (memberships == null || memberships.isEmpty()) {
+            return List.of(new MembershipCommand(fallbackOrganizationId, true, true, 10));
+        }
+
+        return memberships.stream()
+                .map(membership -> new MembershipCommand(
+                        membership.organizationId(),
+                        Boolean.TRUE.equals(membership.primary()),
+                        membership.active() == null || membership.active(),
+                        membership.sortOrder() == null ? 10 : membership.sortOrder()))
+                .toList();
     }
 
     private void requireUpdated(int updated, String message) {
@@ -950,7 +1001,8 @@ public class AdminController {
             @NotNull Long organizationId,
             @NotNull Long positionId,
             String roles,
-            Boolean active) {
+            Boolean active,
+            List<@Valid UserOrganizationMembershipRequest> organizationMemberships) {
     }
 
     public record UpdateUserRequest(
@@ -961,7 +1013,15 @@ public class AdminController {
             @NotNull Long organizationId,
             @NotNull Long positionId,
             String roles,
-            Boolean active) {
+            Boolean active,
+            List<@Valid UserOrganizationMembershipRequest> organizationMemberships) {
+    }
+
+    public record UserOrganizationMembershipRequest(
+            @NotNull Long organizationId,
+            Boolean primary,
+            Boolean active,
+            @Positive Integer sortOrder) {
     }
 
     public record CreateOrganizationRequest(
