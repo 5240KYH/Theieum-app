@@ -253,6 +253,65 @@ describe('ApplicationForm', () => {
     expect(screen.getByAltText('receipt-2.png 미리보기')).toBeInTheDocument();
   });
 
+  it('영수증 일자와 금액을 보기 좋은 형식으로 표시하고 저장 값은 기존 API 형식으로 보낸다', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url === '/api/applications/approval-organizations') {
+        return jsonResponse(approvalOrganizations);
+      }
+
+      if (url === '/api/applications/approval-preview?approvalTypeId=1&approvalOrganizationId=3') {
+        return jsonResponse([
+          { stepOrder: 1, approver: { id: 18, name: '개발팀장', organizationName: '개발팀', positionName: '팀장' }, autoApprovalExpected: false }
+        ]);
+      }
+
+      if (url === '/api/applications' && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body));
+        expect(body.receiptDate).toBe('2026-06-08');
+        expect(body.amount).toBe(100000);
+        return jsonResponse({
+          ...draftResponse,
+          receiptDate: body.receiptDate,
+          amount: body.amount
+        });
+      }
+
+      if (url === '/api/applications/100/attachments') {
+        return jsonResponse({
+          id: 501,
+          originalFilename: 'receipt.png',
+          mimeType: 'image/png',
+          fileSize: 7
+        });
+      }
+
+      return new Response(null, { status: 404 });
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+    render(<App />);
+
+    await userEvent.clear(screen.getByLabelText('신청일자'));
+    await userEvent.type(screen.getByLabelText('신청일자'), '2026-06-08');
+    await userEvent.type(screen.getByLabelText('영수증 일자'), '20260608');
+    await userEvent.type(screen.getByLabelText('사용처'), '테스트');
+    await userEvent.type(screen.getByLabelText('금액'), '100000');
+    await userEvent.type(screen.getByLabelText('신청 내용'), '입력테스트');
+    await userEvent.upload(
+      screen.getByLabelText('영수증 이미지 첨부'),
+      new File(['receipt'], 'receipt.png', { type: 'image/png' })
+    );
+
+    expect(screen.getByLabelText('영수증 일자')).toHaveValue('2026. 06. 08.');
+    expect(screen.getByLabelText('금액')).toHaveValue('100,000');
+
+    await userEvent.click(screen.getByRole('button', { name: '임시저장' }));
+
+    await screen.findByText('임시저장 완료: 신청서 #100');
+  });
+
   it('제출 성공 후 내 신청서 상세로 이동한다', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

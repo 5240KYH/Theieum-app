@@ -36,6 +36,58 @@ function today() {
   return `${now.getFullYear()}-${month}-${date}`;
 }
 
+function formatDateInput(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 8);
+  const year = digits.slice(0, 4);
+  const month = digits.slice(4, 6);
+  const date = digits.slice(6, 8);
+
+  if (digits.length <= 4) {
+    return year;
+  }
+
+  if (digits.length <= 6) {
+    return `${year}. ${month}`;
+  }
+
+  return `${year}. ${month}. ${date}.`;
+}
+
+function formatIsoDateInput(value: string) {
+  return formatDateInput(value);
+}
+
+function toIsoDate(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 8);
+  if (digits.length !== 8) {
+    return '';
+  }
+
+  const year = Number(digits.slice(0, 4));
+  const month = Number(digits.slice(4, 6));
+  const date = Number(digits.slice(6, 8));
+  const parsed = new Date(year, month - 1, date);
+  if (
+    parsed.getFullYear() !== year
+    || parsed.getMonth() !== month - 1
+    || parsed.getDate() !== date
+  ) {
+    return '';
+  }
+
+  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+}
+
+function normalizeAmountInput(value: string) {
+  const digits = value.replace(/\D/g, '');
+  return digits.replace(/^0+(?=\d)/, '');
+}
+
+function formatAmountInput(value: string) {
+  const digits = normalizeAmountInput(value);
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
 function errorMessage(error: unknown) {
   if (error instanceof ApiError) {
     return error.message;
@@ -86,7 +138,7 @@ export function ApplicationForm() {
   const isComplete = useMemo(() => {
     return Boolean(
       applicationDate
-      && receiptDate
+      && toIsoDate(receiptDate)
       && vendor.trim()
       && amount
       && description.trim()
@@ -114,7 +166,7 @@ export function ApplicationForm() {
         }
         setDraft(application);
         setApplicationDate(application.applicationDate);
-        setReceiptDate(application.receiptDate);
+        setReceiptDate(formatIsoDateInput(application.receiptDate));
         setVendor(application.vendor);
         setAmount(String(application.amount));
         setDescription(application.description);
@@ -230,7 +282,7 @@ export function ApplicationForm() {
       approvalTypeId: 1,
       approvalOrganizationId: approvalOrganizationId ?? 0,
       applicationDate,
-      receiptDate,
+      receiptDate: toIsoDate(receiptDate),
       vendor: vendor.trim(),
       amount: Number(amount),
       description: description.trim()
@@ -307,6 +359,11 @@ export function ApplicationForm() {
 
     if (!isComplete) {
       setError('필수 항목을 입력하면 제출할 수 있습니다.');
+      return false;
+    }
+
+    if (!toIsoDate(receiptDate)) {
+      setError('영수증 일자는 YYYY. MM. DD. 형식으로 입력해주세요.');
       return false;
     }
 
@@ -454,9 +511,12 @@ export function ApplicationForm() {
             <span>영수증 일자 <RequiredMark /></span>
             <input
               aria-label="영수증 일자"
-              type="date"
+              inputMode="numeric"
+              maxLength={13}
+              type="text"
               value={receiptDate}
-              onChange={(event) => setReceiptDate(event.target.value)}
+              onChange={(event) => setReceiptDate(formatDateInput(event.target.value))}
+              placeholder="예: 2026. 06. 08."
             />
           </label>
           <label>
@@ -472,10 +532,10 @@ export function ApplicationForm() {
             <span>금액 <RequiredMark /></span>
             <input
               aria-label="금액"
-              min="1"
-              type="number"
-              value={amount}
-              onChange={(event) => setAmount(event.target.value)}
+              inputMode="numeric"
+              type="text"
+              value={formatAmountInput(amount)}
+              onChange={(event) => setAmount(normalizeAmountInput(event.target.value))}
               placeholder="0"
             />
           </label>
