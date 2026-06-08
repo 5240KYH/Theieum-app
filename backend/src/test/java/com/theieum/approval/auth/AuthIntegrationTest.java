@@ -93,8 +93,10 @@ class AuthIntegrationTest {
     @Test
     void meRejectsTamperedToken() throws Exception {
         String accessToken = loginAsAdmin();
-        String tamperedToken = accessToken.substring(0, accessToken.length() - 1)
-                + (accessToken.endsWith("a") ? "b" : "a");
+        String[] tokenParts = accessToken.split("\\.");
+        String signature = tokenParts[2];
+        String tamperedSignature = (signature.charAt(0) == 'a' ? "b" : "a") + signature.substring(1);
+        String tamperedToken = tokenParts[0] + "." + tokenParts[1] + "." + tamperedSignature;
 
         mockMvc.perform(get("/api/me")
                         .header("Authorization", "Bearer " + tamperedToken))

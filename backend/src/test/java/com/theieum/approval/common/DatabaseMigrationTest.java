@@ -55,6 +55,22 @@ class DatabaseMigrationTest {
         assertColumnIsNotNullable("applications", "approval_organization_id");
 
         assertColumnsExist(
+                "user_organizations",
+                "position_id");
+        assertColumnIsNotNullable("user_organizations", "position_id");
+
+        assertColumnsExist(
+                "organizations",
+                "leader_user_id");
+
+        assertColumnsExist(
+                "application_approval_steps",
+                "approval_organization_id",
+                "approval_position_id");
+        assertColumnIsNotNullable("application_approval_steps", "approval_organization_id");
+        assertColumnIsNotNullable("application_approval_steps", "approval_position_id");
+
+        assertColumnsExist(
                 "notification_events",
                 "template_code",
                 "external_message_id",
@@ -100,6 +116,11 @@ class DatabaseMigrationTest {
                 "select count(*) from users where organization_id is null or position_id is null",
                 Integer.class);
         assertThat(usersMissingRequiredReferences).isZero();
+
+        Integer membershipsMissingRequiredReferences = jdbcTemplate.queryForObject(
+                "select count(*) from user_organizations where organization_id is null or position_id is null",
+                Integer.class);
+        assertThat(membershipsMissingRequiredReferences).isZero();
 
         Integer orgPositionStepCount = jdbcTemplate.queryForObject(
                 "select count(*) from approval_line_steps where step_type = ?",

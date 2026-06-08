@@ -6,17 +6,25 @@ export interface UserSummary {
   name: string;
 }
 
+export interface ApprovalPreviewApproverSummary extends UserSummary {
+  organizationName: string;
+  positionName: string;
+}
+
 export interface ApprovalStepResponse {
   id: number;
   stepOrder: number;
   originalApprover: UserSummary;
+  organizationName: string;
+  positionName: string;
   status: ApprovalStepStatus;
   actedAt: string | null;
 }
 
 export interface ApprovalPreviewStep {
   stepOrder: number;
-  approver: UserSummary;
+  approver: ApprovalPreviewApproverSummary;
+  autoApprovalExpected: boolean;
 }
 
 export interface ApprovalOrganizationSummary {
@@ -99,7 +107,8 @@ export function approvalStepStatusLabel(status: ApprovalStepStatus) {
     PENDING: '대기',
     APPROVED: '승인',
     REJECTED: '반려',
-    ADMIN_APPROVED: '관리자 승인'
+    ADMIN_APPROVED: '관리자 승인',
+    AUTO_APPROVED: '자동 승인'
   };
 
   return labels[status] ?? status;

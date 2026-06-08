@@ -5,6 +5,8 @@
 현재 브랜치: `codex-multi-organization-approval`
 기준 커밋: `ef2de84 feat: harden staging attachments and calendar ux`
 
+> 최신 이어받기 기준은 Task 24 인수인계(`docs/handoffs/2026-06-08-task-24-user-organization-position.md`)와 루트 인수인계(`docs/handoff-2026-06-03.md`)를 우선 확인한다. 이 문서의 브랜치/기준 커밋은 Task 23 작성 당시 기록이다.
+
 ## 재시작 프롬프트
 
 ```text

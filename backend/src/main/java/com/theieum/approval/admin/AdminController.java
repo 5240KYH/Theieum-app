@@ -141,7 +141,9 @@ public class AdminController {
                 request.positionId,
                 request.roles == null || request.roles.isBlank() ? "APPLICANT" : request.roles,
                 request.active == null || request.active);
-        userOrganizationService.saveMemberships(id, membershipCommands(request.organizationMemberships, request.organizationId));
+        userOrganizationService.saveMemberships(
+                id,
+                membershipCommands(request.organizationMemberships, request.organizationId, request.positionId));
         return userRow(id);
     }
 
@@ -176,7 +178,9 @@ public class AdminController {
                 request.active == null || request.active,
                 id);
         requireUpdated(updated, "User not found: " + id);
-        userOrganizationService.saveMemberships(id, membershipCommands(request.organizationMemberships, request.organizationId));
+        userOrganizationService.saveMemberships(
+                id,
+                membershipCommands(request.organizationMemberships, request.organizationId, request.positionId));
         return userRow(id);
     }
 
@@ -220,9 +224,23 @@ public class AdminController {
     public List<Map<String, Object>> organizations(@AuthenticationPrincipal AuthenticatedUser user) {
         requireManager(user);
         return jdbcTemplate.queryForList("""
-                select id, name, parent_id, level_no, sort_order, active
-                from organizations
-                order by sort_order asc, id asc
+                select organization.id,
+                       organization.name,
+                       organization.parent_id,
+                       organization.level_no,
+                       organization.sort_order,
+                       organization.active,
+                       organization.leader_user_id,
+                       leader.name as leader_user_name,
+                       position.name as leader_position_name
+                from organizations organization
+                left join users leader on leader.id = organization.leader_user_id
+                left join user_organizations leader_membership
+                    on leader_membership.user_id = leader.id
+                    and leader_membership.organization_id = organization.id
+                    and leader_membership.active = true
+                left join positions position on position.id = leader_membership.position_id
+                order by organization.sort_order asc, organization.id asc
                 """);
     }
 
@@ -237,8 +255,8 @@ public class AdminController {
         }
         Long id = jdbcTemplate.queryForObject(
                 """
-                insert into organizations (name, parent_id, level_no, sort_order, active)
-                values (?, ?, ?, ?, ?)
+                insert into organizations (name, parent_id, level_no, sort_order, active, leader_user_id)
+                values (?, ?, ?, ?, ?, ?)
                 returning id
                 """,
                 Long.class,
@@ -246,8 +264,10 @@ public class AdminController {
                 request.parentId,
                 request.levelNo == null ? 1 : request.levelNo,
                 request.sortOrder == null ? nextSortOrder("organizations") : request.sortOrder,
-                request.active == null || request.active);
-        return one("select id, name, parent_id, level_no, sort_order, active from organizations where id = ?", id);
+                request.active == null || request.active,
+                request.leaderUserId);
+        validateOrganizationLeader(request.leaderUserId, id);
+        return organizationRow(id);
     }
 
     @PutMapping("/organizations/{id}")
@@ -264,6 +284,7 @@ public class AdminController {
             requireExists("organizations", request.parentId, "Parent organization not found: " + request.parentId);
         }
         int levelNo = request.levelNo == null ? organizationLevel(request.parentId) : request.levelNo;
+        validateOrganizationLeader(request.leaderUserId, id);
         int updated = jdbcTemplate.update(
                 """
                 update organizations
@@ -271,7 +292,8 @@ public class AdminController {
                     parent_id = ?,
                     level_no = ?,
                     sort_order = ?,
-                    active = ?
+                    active = ?,
+                    leader_user_id = ?
                 where id = ?
                 """,
                 request.name,
@@ -279,9 +301,10 @@ public class AdminController {
                 levelNo,
                 request.sortOrder == null ? nextSortOrder("organizations") : request.sortOrder,
                 request.active == null || request.active,
+                request.leaderUserId,
                 id);
         requireUpdated(updated, "Organization not found: " + id);
-        return one("select id, name, parent_id, level_no, sort_order, active from organizations where id = ?", id);
+        return organizationRow(id);
     }
 
     @DeleteMapping("/organizations/{id}")
@@ -871,6 +894,13 @@ public class AdminController {
             if (step.directUserId != null) {
                 throw new IllegalArgumentException("ORG_POSITION step must not include directUserId");
             }
+        } else if (stepType == ApprovalStepType.ORG_LEADER) {
+            if (step.positionId != null) {
+                throw new IllegalArgumentException("ORG_LEADER step must not include positionId");
+            }
+            if (step.directUserId != null) {
+                throw new IllegalArgumentException("ORG_LEADER step must not include directUserId");
+            }
         }
     }
 
@@ -906,6 +936,30 @@ public class AdminController {
         }
     }
 
+    private void validateOrganizationLeader(Long leaderUserId, Long organizationId) {
+        if (leaderUserId == null || organizationId == null) {
+            return;
+        }
+        Boolean exists = jdbcTemplate.queryForObject(
+                """
+                select exists (
+                    select 1
+                    from users
+                    join user_organizations uo on uo.user_id = users.id
+                    where users.id = ?
+                      and users.active = true
+                      and uo.organization_id = ?
+                      and uo.active = true
+                )
+                """,
+                Boolean.class,
+                leaderUserId,
+                organizationId);
+        if (!Boolean.TRUE.equals(exists)) {
+            throw new IllegalArgumentException("Organization leader must be an active member: " + leaderUserId);
+        }
+    }
+
     private void requireExists(String tableName, Long id, String message) {
         Boolean exists = jdbcTemplate.queryForObject(
                 "select exists (select 1 from " + tableName + " where id = ?)",
@@ -918,6 +972,28 @@ public class AdminController {
 
     private Map<String, Object> one(String sql, Object id) {
         return jdbcTemplate.queryForMap(sql, id);
+    }
+
+    private Map<String, Object> organizationRow(long id) {
+        return one("""
+                select organization.id,
+                       organization.name,
+                       organization.parent_id,
+                       organization.level_no,
+                       organization.sort_order,
+                       organization.active,
+                       organization.leader_user_id,
+                       leader.name as leader_user_name,
+                       position.name as leader_position_name
+                from organizations organization
+                left join users leader on leader.id = organization.leader_user_id
+                left join user_organizations leader_membership
+                    on leader_membership.user_id = leader.id
+                    and leader_membership.organization_id = organization.id
+                    and leader_membership.active = true
+                left join positions position on position.id = leader_membership.position_id
+                where organization.id = ?
+                """, id);
     }
 
     private Map<String, Object> userRow(long id) {
@@ -951,14 +1027,16 @@ public class AdminController {
 
     private List<MembershipCommand> membershipCommands(
             List<UserOrganizationMembershipRequest> memberships,
-            Long fallbackOrganizationId) {
+            Long fallbackOrganizationId,
+            Long fallbackPositionId) {
         if (memberships == null || memberships.isEmpty()) {
-            return List.of(new MembershipCommand(fallbackOrganizationId, true, true, 10));
+            return List.of(new MembershipCommand(fallbackOrganizationId, fallbackPositionId, true, true, 10));
         }
 
         return memberships.stream()
                 .map(membership -> new MembershipCommand(
                         membership.organizationId(),
+                        membership.positionId() == null ? fallbackPositionId : membership.positionId(),
                         Boolean.TRUE.equals(membership.primary()),
                         membership.active() == null || membership.active(),
                         membership.sortOrder() == null ? 10 : membership.sortOrder()))
@@ -1019,6 +1097,7 @@ public class AdminController {
 
     public record UserOrganizationMembershipRequest(
             @NotNull Long organizationId,
+            Long positionId,
             Boolean primary,
             Boolean active,
             @Positive Integer sortOrder) {
@@ -1029,6 +1108,7 @@ public class AdminController {
             Long parentId,
             @Positive Integer levelNo,
             @Positive Integer sortOrder,
+            Long leaderUserId,
             Boolean active) {
     }
 

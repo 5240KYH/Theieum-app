@@ -3,7 +3,6 @@ package com.theieum.approval.application;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -27,6 +26,7 @@ import com.theieum.approval.common.ResourceNotFoundException;
 import com.theieum.approval.common.WorkflowConflictException;
 import com.theieum.approval.notification.NotificationEventService;
 import com.theieum.approval.organization.Organization;
+import com.theieum.approval.organization.Position;
 import com.theieum.approval.user.User;
 import com.theieum.approval.user.UserOrganizationService;
 import com.theieum.approval.user.UserRepository;
@@ -36,6 +36,9 @@ import jakarta.persistence.EntityManager;
 @Service
 @Transactional
 public class ApplicationService {
+
+    private static final String AUTO_APPROVED_ACTION = "AUTO_APPROVED";
+    private static final String AUTO_APPROVED_COMMENT = "신청자와 결재자가 동일하여 자동 승인되었습니다.";
 
     private final ApplicationRepository applicationRepository;
     private final ApplicationApprovalStepRepository approvalStepRepository;
@@ -151,9 +154,59 @@ public class ApplicationService {
                     if (user == null || !user.isActive()) {
                         throw new ResourceNotFoundException("Active approver not found: " + approver.userId());
                     }
-                    return new ApprovalPreviewStep(approver.stepOrder(), user.getId(), user.getName());
+                    ApprovalPreviewProfile profile = findApprovalPreviewProfile(approver);
+                    return new ApprovalPreviewStep(
+                            approver.stepOrder(),
+                            user.getId(),
+                            user.getName(),
+                            profile.organizationName(),
+                            profile.positionName(),
+                            approver.userId().equals(applicantId));
                 })
                 .toList();
+    }
+
+    private ApprovalPreviewProfile findApprovalPreviewProfile(ResolvedApprover approver) {
+        if (approver.organizationId() == null || approver.positionId() == null) {
+            return findUserMirrorPreviewProfile(approver.userId());
+        }
+
+        List<?> rows = entityManager.createNativeQuery(
+                        """
+                        select organization.name, position.name
+                        from organizations organization
+                        join positions position on position.id = ?
+                        where organization.id = ?
+                        """)
+                .setParameter(1, approver.positionId())
+                .setParameter(2, approver.organizationId())
+                .getResultList();
+        if (rows.isEmpty()) {
+            throw new ResourceNotFoundException("Approver organization or position not found: " + approver.userId());
+        }
+
+        Object[] row = (Object[]) rows.getFirst();
+        return new ApprovalPreviewProfile((String) row[0], (String) row[1]);
+    }
+
+    private ApprovalPreviewProfile findUserMirrorPreviewProfile(long userId) {
+        List<?> rows = entityManager.createNativeQuery(
+                        """
+                        select organization.name, position.name
+                        from users users
+                        join organizations organization on organization.id = users.organization_id
+                        join positions position on position.id = users.position_id
+                        where users.id = ?
+                          and users.active = true
+                        """)
+                .setParameter(1, userId)
+                .getResultList();
+        if (rows.isEmpty()) {
+            throw new ResourceNotFoundException("Active approver not found: " + userId);
+        }
+
+        Object[] row = (Object[]) rows.getFirst();
+        return new ApprovalPreviewProfile((String) row[0], (String) row[1]);
     }
 
     public Attachment attachReceiptImage(
@@ -208,20 +261,20 @@ public class ApplicationService {
                 .mapToObj(index -> {
                     ResolvedApprover approver = approvers.get(index);
                     return new ApplicationApprovalStep(
-                        application,
+                            application,
                             index + 1,
-                            entityManager.getReference(User.class, approver.userId()));
+                            entityManager.getReference(User.class, approver.userId()),
+                            entityManager.getReference(Organization.class, approver.organizationId()),
+                            entityManager.getReference(Position.class, approver.positionId()));
                 })
                 .toList();
         approvalStepRepository.saveAll(approvalSteps);
 
-        application.submit(Instant.now());
+        Instant submittedAt = Instant.now();
+        application.submit(submittedAt);
         Application submitted = applicationRepository.save(application);
 
-        ApplicationApprovalStep firstStep = approvalSteps.stream()
-                .min(Comparator.comparingInt(ApplicationApprovalStep::getStepOrder))
-                .orElseThrow(() -> new WorkflowConflictException("Approval line has no approvers"));
-        notificationEventService.createApprovalRequested(submitted, firstStep.getOriginalApprover());
+        advanceAfterApprovedStep(submitted, submittedAt);
 
         return submitted;
     }
@@ -367,16 +420,38 @@ public class ApplicationService {
     }
 
     private void advanceAfterApprovedStep(Application application, Instant actedAt) {
-        approvalStepRepository.findLockedByApplicationIdOrderByStepOrderAsc(application.getId())
-                .stream()
-                .filter(step -> step.getStatus() == ApprovalStepStatus.PENDING)
-                .findFirst()
-                .ifPresentOrElse(
-                        nextStep -> notificationEventService.createApprovalRequested(application, nextStep.getOriginalApprover()),
-                        () -> {
-                            application.approve(actedAt);
-                            notificationEventService.createApplicationApproved(application);
-                        });
+        while (true) {
+            ApplicationApprovalStep nextStep = approvalStepRepository
+                    .findLockedByApplicationIdOrderByStepOrderAsc(application.getId())
+                    .stream()
+                    .filter(step -> step.getStatus() == ApprovalStepStatus.PENDING)
+                    .findFirst()
+                    .orElse(null);
+            if (nextStep == null) {
+                application.approve(actedAt);
+                notificationEventService.createApplicationApproved(application);
+                return;
+            }
+            if (!nextStep.getOriginalApprover().getId().equals(application.getApplicant().getId())) {
+                notificationEventService.createApprovalRequested(application, nextStep.getOriginalApprover());
+                return;
+            }
+            autoApproveApplicantStep(nextStep, actedAt);
+        }
+    }
+
+    private void autoApproveApplicantStep(ApplicationApprovalStep step, Instant actedAt) {
+        step.approve(actedAt);
+        entityManager.persist(new ApprovalHistory(
+                step.getApplication(),
+                step,
+                AUTO_APPROVED_ACTION,
+                step.getOriginalApprover(),
+                step.getApplication().getApplicant(),
+                false,
+                null,
+                AUTO_APPROVED_COMMENT,
+                actedAt));
     }
 
     private String requireText(String value, String message) {
@@ -467,6 +542,15 @@ public class ApplicationService {
         }
     }
 
-    public record ApprovalPreviewStep(int stepOrder, Long approverId, String approverName) {
+    private record ApprovalPreviewProfile(String organizationName, String positionName) {
+    }
+
+    public record ApprovalPreviewStep(
+            int stepOrder,
+            Long approverId,
+            String approverName,
+            String organizationName,
+            String positionName,
+            boolean autoApprovalExpected) {
     }
 }

@@ -206,7 +206,9 @@ export function ApplicationDetailPage() {
               {application.approvalSteps.length > 0 ? application.approvalSteps.map((step) => (
                 <div className="step-item" key={step.id}>
                   <span className="step-order">{step.stepOrder}</span>
+                  <span className="approval-preview-organization">{step.organizationName}</span>
                   <strong>{step.originalApprover.name}</strong>
+                  <span className="approval-preview-position">{step.positionName}</span>
                   <span className="status-pill compact">{approvalStepStatusLabel(step.status)}</span>
                   <span>{formatDateTime(step.actedAt)}</span>
                 </div>

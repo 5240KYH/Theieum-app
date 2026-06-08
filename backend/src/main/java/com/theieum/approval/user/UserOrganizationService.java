@@ -25,17 +25,22 @@ public class UserOrganizationService {
                 """
                 select uo.organization_id,
                        organization.name as organization_name,
+                       uo.position_id,
+                       position.name as position_name,
                        uo.primary_flag,
                        uo.active,
                        uo.sort_order
                 from user_organizations uo
                 join organizations organization on organization.id = uo.organization_id
+                join positions position on position.id = uo.position_id
                 where uo.user_id = ?
                 order by uo.sort_order asc, uo.id asc
                 """,
                 (rs, rowNum) -> new MembershipSummary(
                         rs.getLong("organization_id"),
                         rs.getString("organization_name"),
+                        rs.getLong("position_id"),
+                        rs.getString("position_name"),
                         rs.getBoolean("primary_flag"),
                         rs.getBoolean("active"),
                         rs.getInt("sort_order")),
@@ -71,6 +76,7 @@ public class UserOrganizationService {
     public void saveMemberships(long userId, List<MembershipCommand> memberships) {
         validateMemberships(memberships);
         long primaryOrganizationId = activePrimaryOrganizationId(memberships);
+        long primaryPositionId = activePrimaryPositionId(memberships);
 
         jdbcTemplate.update("delete from user_organizations where user_id = ?", userId);
         for (MembershipCommand membership : memberships) {
@@ -79,18 +85,24 @@ public class UserOrganizationService {
                     insert into user_organizations (
                         user_id,
                         organization_id,
+                        position_id,
                         primary_flag,
                         active,
                         sort_order
-                    ) values (?, ?, ?, ?, ?)
+                    ) values (?, ?, ?, ?, ?, ?)
                     """,
                     userId,
                     membership.organizationId(),
+                    membership.positionId(),
                     membership.primary(),
                     membership.active(),
                     membership.sortOrder());
         }
-        jdbcTemplate.update("update users set organization_id = ? where id = ?", primaryOrganizationId, userId);
+        jdbcTemplate.update(
+                "update users set organization_id = ?, position_id = ? where id = ?",
+                primaryOrganizationId,
+                primaryPositionId,
+                userId);
     }
 
     @Transactional(readOnly = true)
@@ -127,10 +139,14 @@ public class UserOrganizationService {
             if (membership.organizationId() == null) {
                 throw new IllegalArgumentException("소속 조직을 입력해주세요.");
             }
+            if (membership.positionId() == null) {
+                throw new IllegalArgumentException("소속 직위를 입력해주세요.");
+            }
             if (!organizationIds.add(membership.organizationId())) {
                 throw new IllegalArgumentException("중복된 소속 조직입니다: " + membership.organizationId());
             }
             requireActiveOrganization(membership.organizationId());
+            requireActivePosition(membership.positionId());
             if (membership.primary() && !membership.active()) {
                 throw new IllegalArgumentException("대표 소속은 활성 상태여야 합니다.");
             }
@@ -152,6 +168,14 @@ public class UserOrganizationService {
                 .orElseThrow();
     }
 
+    private long activePrimaryPositionId(List<MembershipCommand> memberships) {
+        return memberships.stream()
+                .filter(membership -> membership.active() && membership.primary())
+                .map(MembershipCommand::positionId)
+                .findFirst()
+                .orElseThrow();
+    }
+
     private void requireActiveOrganization(Long organizationId) {
         Boolean exists = jdbcTemplate.queryForObject(
                 """
@@ -169,16 +193,35 @@ public class UserOrganizationService {
         }
     }
 
+    private void requireActivePosition(Long positionId) {
+        Boolean exists = jdbcTemplate.queryForObject(
+                """
+                select exists (
+                    select 1
+                    from positions
+                    where id = ?
+                      and active = true
+                )
+                """,
+                Boolean.class,
+                positionId);
+        if (!Boolean.TRUE.equals(exists)) {
+            throw new IllegalArgumentException("활성 직위가 아닙니다: " + positionId);
+        }
+    }
+
     private static Long nullableLong(Object value) {
         return value == null ? null : ((Number) value).longValue();
     }
 
-    public record MembershipCommand(Long organizationId, boolean primary, boolean active, int sortOrder) {
+    public record MembershipCommand(Long organizationId, Long positionId, boolean primary, boolean active, int sortOrder) {
     }
 
     public record MembershipSummary(
             Long organizationId,
             String organizationName,
+            Long positionId,
+            String positionName,
             boolean primary,
             boolean active,
             int sortOrder) {

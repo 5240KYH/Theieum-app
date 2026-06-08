@@ -3,6 +3,8 @@ package com.theieum.approval.application;
 import java.time.Instant;
 
 import com.theieum.approval.approval.ApprovalStepStatus;
+import com.theieum.approval.organization.Organization;
+import com.theieum.approval.organization.Position;
 import com.theieum.approval.user.User;
 
 import jakarta.persistence.Column;
@@ -36,6 +38,14 @@ public class ApplicationApprovalStep {
     @JoinColumn(name = "original_approver_id", nullable = false)
     private User originalApprover;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "approval_organization_id", nullable = false)
+    private Organization approvalOrganization;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "approval_position_id", nullable = false)
+    private Position approvalPosition;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
     private ApprovalStepStatus status;
@@ -46,10 +56,17 @@ public class ApplicationApprovalStep {
     protected ApplicationApprovalStep() {
     }
 
-    public ApplicationApprovalStep(Application application, int stepOrder, User originalApprover) {
+    public ApplicationApprovalStep(
+            Application application,
+            int stepOrder,
+            User originalApprover,
+            Organization approvalOrganization,
+            Position approvalPosition) {
         this.application = application;
         this.stepOrder = stepOrder;
         this.originalApprover = originalApprover;
+        this.approvalOrganization = approvalOrganization;
+        this.approvalPosition = approvalPosition;
         this.status = ApprovalStepStatus.PENDING;
     }
 
@@ -91,6 +108,14 @@ public class ApplicationApprovalStep {
 
     public User getOriginalApprover() {
         return originalApprover;
+    }
+
+    public Organization getApprovalOrganization() {
+        return approvalOrganization;
+    }
+
+    public Position getApprovalPosition() {
+        return approvalPosition;
     }
 
     public ApprovalStepStatus getStatus() {

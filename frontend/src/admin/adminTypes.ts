@@ -21,6 +21,8 @@ export interface AdminNotificationEvent {
 export interface AdminUserOrganizationMembership {
   organizationId: number;
   organizationName?: string;
+  positionId: number;
+  positionName?: string;
   primary: boolean;
   active: boolean;
   sortOrder: number;
@@ -46,6 +48,9 @@ export interface AdminOrganization {
   parent_id: number | null;
   level_no: number;
   sort_order: number;
+  leader_user_id: number | null;
+  leader_user_name: string | null;
+  leader_position_name: string | null;
   active: boolean;
 }
 

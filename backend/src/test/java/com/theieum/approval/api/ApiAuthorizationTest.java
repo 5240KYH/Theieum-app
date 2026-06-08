@@ -405,6 +405,89 @@ class ApiAuthorizationTest {
     }
 
     @Test
+    void adminApprovalLineAcceptsOrganizationLeaderSteps() throws Exception {
+        String adminToken = login("admin");
+        long approvalTypeId = jdbcTemplate.queryForObject("""
+                insert into approval_types (name, description, active)
+                values ('조직장 API 테스트', '조직장 단계 저장 테스트', true)
+                returning id
+                """, Long.class);
+
+        mockMvc.perform(post("/api/admin/approval-lines")
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "approvalTypeId": %d,
+                                  "name": "조직장 결재선",
+                                  "steps": [
+                                    {
+                                      "stepOrder": 1,
+                                      "stepType": "ORG_LEADER",
+                                      "organizationScope": "PARENT_ORG",
+                                      "sortPolicy": "POSITION_ORDER"
+                                    }
+                                  ]
+                                }
+                                """.formatted(approvalTypeId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("조직장 결재선"))
+                .andExpect(jsonPath("$.steps[0].stepType").value("ORG_LEADER"))
+                .andExpect(jsonPath("$.steps[0].organizationScope").value("PARENT_ORG"))
+                .andExpect(jsonPath("$.steps[0].positionId").doesNotExist())
+                .andExpect(jsonPath("$.steps[0].directUserId").doesNotExist());
+    }
+
+    @Test
+    void managerCanAssignOrganizationLeaderFromActiveMembership() throws Exception {
+        long managerId = createRoleTestUser("org-leader-manager", "MANAGER,APPLICANT");
+        String managerToken = login("org-leader-manager");
+        long organizationId = jdbcTemplate.queryForObject("""
+                insert into organizations (name, parent_id, level_no, sort_order, active)
+                values ('조직장 API 조직', null, 1, 903, true)
+                returning id
+                """, Long.class);
+        long leaderId = createRoleTestUser("org-leader-member", "APPROVER,APPLICANT");
+        jdbcTemplate.update("""
+                insert into user_organizations (user_id, organization_id, position_id, primary_flag, active, sort_order)
+                values (?, ?, 4, false, true, 10)
+                """, leaderId, organizationId);
+
+        mockMvc.perform(put("/api/admin/organizations/{id}", organizationId)
+                        .header("Authorization", bearer(managerToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "조직장 API 조직",
+                                  "parentId": null,
+                                  "levelNo": 1,
+                                  "sortOrder": 903,
+                                  "leaderUserId": %d,
+                                  "active": true
+                                }
+                                """.formatted(leaderId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.leader_user_id").value(leaderId))
+                .andExpect(jsonPath("$.leader_user_name").value("org-leader-member"))
+                .andExpect(jsonPath("$.leader_position_name").exists());
+
+        mockMvc.perform(put("/api/admin/organizations/{id}", organizationId)
+                        .header("Authorization", bearer(managerToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "조직장 API 조직",
+                                  "parentId": null,
+                                  "levelNo": 1,
+                                  "sortOrder": 903,
+                                  "leaderUserId": %d,
+                                  "active": true
+                                }
+                                """.formatted(managerId)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void adminCanManageOrganizationApprovalExceptions() throws Exception {
         String adminToken = login("admin");
         String applicantToken = login("employee01");

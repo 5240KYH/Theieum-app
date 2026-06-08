@@ -40,28 +40,37 @@ class UserOrganizationServiceTest {
     @Test
     void saveMembershipsSynchronizesUserOrganizationMirrorWhenPrimaryMembershipChanges() {
         service.saveMemberships(3L, List.of(
-                new MembershipCommand(4L, true, true, 10),
-                new MembershipCommand(3L, false, true, 20)));
+                new MembershipCommand(4L, 4L, true, true, 10),
+                new MembershipCommand(3L, 1L, false, true, 20)));
 
         Long mirrorOrganizationId = jdbcTemplate.queryForObject(
                 "select organization_id from users where id = ?",
                 Long.class,
                 3L);
+        Long mirrorPositionId = jdbcTemplate.queryForObject(
+                "select position_id from users where id = ?",
+                Long.class,
+                3L);
 
         assertThat(mirrorOrganizationId).isEqualTo(4L);
+        assertThat(mirrorPositionId).isEqualTo(4L);
     }
 
     @Test
     void findMembershipsReturnsMembershipsOrderedBySortOrderAndIdWithPrimaryFlag() {
         service.saveMemberships(3L, List.of(
-                new MembershipCommand(4L, false, true, 30),
-                new MembershipCommand(2L, true, true, 10),
-                new MembershipCommand(3L, false, false, 10)));
+                new MembershipCommand(4L, 2L, false, true, 30),
+                new MembershipCommand(2L, 4L, true, true, 10),
+                new MembershipCommand(3L, 1L, false, false, 10)));
 
         List<MembershipSummary> memberships = service.findMemberships(3L);
 
         assertThat(memberships).extracting(MembershipSummary::organizationId)
                 .containsExactly(2L, 3L, 4L);
+        assertThat(memberships).extracting(MembershipSummary::positionId)
+                .containsExactly(4L, 1L, 2L);
+        assertThat(memberships).extracting(MembershipSummary::positionName)
+                .containsExactly("팀장", "사원", "대리");
         assertThat(memberships).extracting(MembershipSummary::primary)
                 .containsExactly(true, false, false);
         assertThat(memberships).extracting(MembershipSummary::active)
@@ -71,9 +80,9 @@ class UserOrganizationServiceTest {
     @Test
     void findActiveApprovalOrganizationsReturnsPrimaryMembershipBeforeLowerSortOrderSecondaryMembership() {
         service.saveMemberships(3L, List.of(
-                new MembershipCommand(4L, false, true, 10),
-                new MembershipCommand(2L, true, true, 30),
-                new MembershipCommand(3L, false, false, 5)));
+                new MembershipCommand(4L, 2L, false, true, 10),
+                new MembershipCommand(2L, 4L, true, true, 30),
+                new MembershipCommand(3L, 1L, false, false, 5)));
 
         List<ApprovalOrganizationSummary> organizations = service.findActiveApprovalOrganizations(3L);
 
@@ -86,14 +95,14 @@ class UserOrganizationServiceTest {
     @Test
     void saveMembershipsRequiresExactlyOneActivePrimaryMembership() {
         assertThatThrownBy(() -> service.saveMemberships(3L, List.of(
-                new MembershipCommand(2L, true, true, 10),
-                new MembershipCommand(3L, true, true, 20))))
+                new MembershipCommand(2L, 1L, true, true, 10),
+                new MembershipCommand(3L, 1L, true, true, 20))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("대표 소속");
 
         assertThatThrownBy(() -> service.saveMemberships(3L, List.of(
-                new MembershipCommand(2L, false, true, 10),
-                new MembershipCommand(3L, false, true, 20))))
+                new MembershipCommand(2L, 1L, false, true, 10),
+                new MembershipCommand(3L, 1L, false, true, 20))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("대표 소속");
     }
@@ -101,8 +110,8 @@ class UserOrganizationServiceTest {
     @Test
     void saveMembershipsRejectsInactivePrimaryMembership() {
         assertThatThrownBy(() -> service.saveMemberships(3L, List.of(
-                new MembershipCommand(2L, true, true, 10),
-                new MembershipCommand(3L, true, false, 20))))
+                new MembershipCommand(2L, 1L, true, true, 10),
+                new MembershipCommand(3L, 1L, true, false, 20))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("대표 소속은 활성 상태");
     }
@@ -110,17 +119,32 @@ class UserOrganizationServiceTest {
     @Test
     void saveMembershipsRejectsDuplicateOrganizations() {
         assertThatThrownBy(() -> service.saveMemberships(3L, List.of(
-                new MembershipCommand(2L, true, true, 10),
-                new MembershipCommand(2L, false, true, 20))))
+                new MembershipCommand(2L, 1L, true, true, 10),
+                new MembershipCommand(2L, 4L, false, true, 20))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("중복");
     }
 
     @Test
+    void saveMembershipsRejectsInactivePosition() {
+        jdbcTemplate.update("update positions set active = false where id = ?", 2L);
+
+        try {
+            assertThatThrownBy(() -> service.saveMemberships(3L, List.of(
+                    new MembershipCommand(2L, 1L, true, true, 10),
+                    new MembershipCommand(3L, 2L, false, true, 20))))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("활성 직위");
+        } finally {
+            jdbcTemplate.update("update positions set active = true where id = ?", 2L);
+        }
+    }
+
+    @Test
     void requireActiveMembershipRejectsOrganizationOutsideApplicantActiveMemberships() {
         service.saveMemberships(3L, List.of(
-                new MembershipCommand(3L, true, true, 10),
-                new MembershipCommand(4L, false, false, 20)));
+                new MembershipCommand(3L, 1L, true, true, 10),
+                new MembershipCommand(4L, 4L, false, false, 20)));
 
         assertThat(service.requireActiveMembership(3L, 3L)).isEqualTo(3L);
         assertThatThrownBy(() -> service.requireActiveMembership(3L, 4L))

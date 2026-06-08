@@ -405,8 +405,13 @@ export function ApplicationForm() {
             <ol className="approval-preview-list">
               {approvalPreview.map((step) => (
                 <li key={`${step.stepOrder}-${step.approver.id}`}>
-                  <span className="status-pill compact">{step.stepOrder}단계</span>
+                  <span className="approval-preview-step-order">{step.stepOrder}단계</span>
+                  <span className="approval-preview-organization">{step.approver.organizationName}</span>
                   <strong>{step.approver.name}</strong>
+                  <span className="approval-preview-position">{step.approver.positionName}</span>
+                  {step.autoApprovalExpected ? (
+                    <span className="approval-preview-auto">자동</span>
+                  ) : null}
                 </li>
               ))}
             </ol>
@@ -427,7 +432,7 @@ export function ApplicationForm() {
             >
               {approvalOrganizations.map((organization) => (
                 <option key={organization.id} value={organization.id}>
-                  {organization.primary ? `${organization.name} (대표)` : organization.name}
+                  {organization.name}
                 </option>
               ))}
             </select>

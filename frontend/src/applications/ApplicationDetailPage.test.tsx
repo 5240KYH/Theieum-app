@@ -342,6 +342,44 @@ describe('ApplicationDetailPage', () => {
     expect(screen.getAllByText('결재자 부재로 관리자 예외 승인')).not.toHaveLength(0);
   });
 
+  it('결재 진행 상태에서 산정 당시 조직과 직위를 함께 표시한다', async () => {
+    const steppedResponse = {
+      ...applicationResponse,
+      attachments: [],
+      approvalSteps: [
+        {
+          id: 701,
+          stepOrder: 1,
+          originalApprover: { id: 18, name: '개발팀장' },
+          organizationName: '개발팀',
+          positionName: '팀장',
+          status: 'PENDING',
+          actedAt: null
+        }
+      ]
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === '/api/applications/100') {
+          return new Response(JSON.stringify(steppedResponse), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
+        return new Response(null, { status: 404 });
+      })
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '신청서 상세' })).toBeInTheDocument();
+    expect(screen.getAllByText('개발팀장')).not.toHaveLength(0);
+    expect(screen.getAllByText('개발팀')).not.toHaveLength(0);
+    expect(screen.getByText('팀장')).toBeInTheDocument();
+  });
+
   it('모바일에서 상세 액션과 결재 이력을 카드 구조로 제공한다', async () => {
     const auditedResponse = {
       ...applicationResponse,

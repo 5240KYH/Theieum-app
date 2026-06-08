@@ -36,6 +36,8 @@ public class AdminHardDeleteService {
                 "결재선에서 사용 중인 사용자입니다. 비활성화만 가능합니다.");
         requireUnused("select count(*) from approval_org_exceptions where approver_user_id = ?", id,
                 "조직별 예외 결재자에서 사용 중인 사용자입니다. 비활성화만 가능합니다.");
+        requireUnused("select count(*) from organizations where leader_user_id = ?", id,
+                "조직장으로 지정된 사용자입니다. 조직장을 먼저 변경해 주세요.");
         jdbcTemplate.update("delete from user_organizations where user_id = ?", id);
         jdbcTemplate.update("delete from users where id = ?", id);
     }
@@ -60,9 +62,13 @@ public class AdminHardDeleteService {
     public void hardDeletePosition(long id) {
         requireExists("positions", id, "Position not found: " + id);
         long userCount = count("select count(*) from users where position_id = ?", id);
+        long membershipCount = count("select count(*) from user_organizations where position_id = ?", id);
         long stepCount = count("select count(*) from approval_line_steps where position_id = ?", id);
         if (userCount + stepCount > 0) {
             throw new WorkflowConflictException("사용자가 있거나 결재선에서 사용 중인 직위입니다. 비활성화만 가능합니다.");
+        }
+        if (membershipCount > 0) {
+            throw new WorkflowConflictException("소속에서 사용 중인 직위입니다. 비활성화만 가능합니다.");
         }
         jdbcTemplate.update("delete from positions where id = ?", id);
     }

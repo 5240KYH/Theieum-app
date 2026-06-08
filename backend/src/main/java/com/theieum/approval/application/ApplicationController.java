@@ -323,6 +323,8 @@ public class ApplicationController {
             Long id,
             int stepOrder,
             UserSummary originalApprover,
+            String organizationName,
+            String positionName,
             ApprovalStepStatus status,
             Instant actedAt) {
 
@@ -331,6 +333,8 @@ public class ApplicationController {
                     step.getId(),
                     step.getStepOrder(),
                     UserSummary.from(step.getOriginalApprover()),
+                    step.getApprovalOrganization().getName(),
+                    step.getApprovalPosition().getName(),
                     step.getStatus(),
                     step.getActedAt());
         }
@@ -338,13 +342,26 @@ public class ApplicationController {
 
     public record ApprovalPreviewStepResponse(
             int stepOrder,
-            UserSummary approver) {
+            ApprovalPreviewApproverResponse approver,
+            boolean autoApprovalExpected) {
 
         static ApprovalPreviewStepResponse from(ApplicationService.ApprovalPreviewStep step) {
             return new ApprovalPreviewStepResponse(
                     step.stepOrder(),
-                    new UserSummary(step.approverId(), step.approverName()));
+                    new ApprovalPreviewApproverResponse(
+                            step.approverId(),
+                            step.approverName(),
+                            step.organizationName(),
+                            step.positionName()),
+                    step.autoApprovalExpected());
         }
+    }
+
+    public record ApprovalPreviewApproverResponse(
+            Long id,
+            String name,
+            String organizationName,
+            String positionName) {
     }
 
     public record UserSummary(Long id, String name) {

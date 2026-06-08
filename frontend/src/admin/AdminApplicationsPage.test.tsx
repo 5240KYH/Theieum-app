@@ -72,6 +72,8 @@ const applicationDetail = {
       id: 77,
       stepOrder: 1,
       originalApprover: { id: 4, name: '팀장01' },
+      organizationName: '개발팀',
+      positionName: '팀장',
       status: 'PENDING',
       actedAt: null
     }

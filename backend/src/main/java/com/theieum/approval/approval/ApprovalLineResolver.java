@@ -46,6 +46,8 @@ public class ApprovalLineResolver {
                 approvers.add(resolveDirectUser(step));
             } else if (step.getStepType() == ApprovalStepType.ORG_POSITION) {
                 approvers.addAll(resolveOrganizationPosition(step, organizationId));
+            } else if (step.getStepType() == ApprovalStepType.ORG_LEADER) {
+                approvers.add(resolveOrganizationLeader(step, organizationId));
             }
         }
 
@@ -92,10 +94,13 @@ public class ApprovalLineResolver {
                         throw new IllegalStateException(
                                 "Organization exception has no active approver: " + exception.getId());
                     }
+                    Long approverUserId = exception.getApproverUser().getId();
                     return new ResolvedApprover(
-                            exception.getApproverUser().getId(),
+                            approverUserId,
                             exception.getStepOrder(),
-                            ApprovalStepType.DIRECT_USER);
+                            ApprovalStepType.DIRECT_USER,
+                            exception.getOrganization().getId(),
+                            findMembershipPositionIdOrUserMirror(approverUserId, exception.getOrganization().getId()).positionId());
                 })
                 .toList();
     }
@@ -132,7 +137,13 @@ public class ApprovalLineResolver {
             throw new IllegalStateException("DIRECT_USER step has no active direct user: " + step.getId());
         }
 
-        return new ResolvedApprover(step.getDirectUser().getId(), step.getStepOrder(), step.getStepType());
+        UserAssignment assignment = findUserMirrorAssignment(step.getDirectUser().getId());
+        return new ResolvedApprover(
+                step.getDirectUser().getId(),
+                step.getStepOrder(),
+                step.getStepType(),
+                assignment.organizationId(),
+                assignment.positionId());
     }
 
     private List<ResolvedApprover> resolveOrganizationPosition(ApprovalLineStep step, long organizationId) {
@@ -146,8 +157,8 @@ public class ApprovalLineResolver {
                         select users.id
                         from users
                         join user_organizations uo on uo.user_id = users.id
-                        join positions on positions.id = users.position_id
-                        where users.position_id = ?
+                        join positions on positions.id = uo.position_id
+                        where uo.position_id = ?
                           and uo.organization_id = ?
                           and uo.active = true
                           and users.active = true
@@ -161,8 +172,44 @@ public class ApprovalLineResolver {
         }
 
         return userIds.stream()
-                .map(userId -> new ResolvedApprover(toLong(userId), step.getStepOrder(), step.getStepType()))
+                .map(userId -> new ResolvedApprover(
+                        toLong(userId),
+                        step.getStepOrder(),
+                        step.getStepType(),
+                        targetOrganizationId,
+                        step.getPosition().getId()))
                 .toList();
+    }
+
+    private ResolvedApprover resolveOrganizationLeader(ApprovalLineStep step, long organizationId) {
+        Long targetOrganizationId = resolveOrganizationScope(step.getOrganizationScope(), organizationId);
+        List<?> rows = entityManager.createNativeQuery(
+                        """
+                        select leader.id, uo.position_id
+                        from organizations organization
+                        join users leader on leader.id = organization.leader_user_id
+                        join user_organizations uo on uo.user_id = leader.id
+                            and uo.organization_id = organization.id
+                            and uo.active = true
+                        where organization.id = ?
+                          and organization.active = true
+                          and leader.active = true
+                        order by uo.primary_flag desc, uo.sort_order asc, uo.id asc
+                        limit 1
+                        """)
+                .setParameter(1, targetOrganizationId)
+                .getResultList();
+        if (rows.isEmpty()) {
+            throw new IllegalStateException("ORG_LEADER step has no active organization leader: " + step.getId());
+        }
+
+        Object[] row = (Object[]) rows.getFirst();
+        return new ResolvedApprover(
+                toLong(row[0]),
+                step.getStepOrder(),
+                step.getStepType(),
+                targetOrganizationId,
+                toLong(row[1]));
     }
 
     private List<ResolvedApprover> deduplicateApprovers(List<ResolvedApprover> approvers) {
@@ -236,6 +283,44 @@ public class ApprovalLineResolver {
         return toLong(organizationIds.getFirst());
     }
 
+    private UserAssignment findMembershipPositionIdOrUserMirror(long userId, long organizationId) {
+        List<?> rows = entityManager.createNativeQuery(
+                        """
+                        select uo.organization_id, uo.position_id
+                        from user_organizations uo
+                        where uo.user_id = ?
+                          and uo.organization_id = ?
+                          and uo.active = true
+                        order by uo.primary_flag desc, uo.sort_order asc, uo.id asc
+                        limit 1
+                        """)
+                .setParameter(1, userId)
+                .setParameter(2, organizationId)
+                .getResultList();
+        if (!rows.isEmpty()) {
+            Object[] row = (Object[]) rows.getFirst();
+            return new UserAssignment(toLong(row[0]), toLong(row[1]));
+        }
+        return findUserMirrorAssignment(userId);
+    }
+
+    private UserAssignment findUserMirrorAssignment(long userId) {
+        List<?> rows = entityManager.createNativeQuery(
+                        """
+                        select organization_id, position_id
+                        from users
+                        where id = ?
+                          and active = true
+                        """)
+                .setParameter(1, userId)
+                .getResultList();
+        if (rows.isEmpty()) {
+            throw new IllegalStateException("Active approver not found: " + userId);
+        }
+        Object[] row = (Object[]) rows.getFirst();
+        return new UserAssignment(toLong(row[0]), toLong(row[1]));
+    }
+
     private Long toLong(Object value) {
         if (value instanceof Number number) {
             return number.longValue();
@@ -244,6 +329,18 @@ public class ApprovalLineResolver {
         throw new IllegalStateException("Expected numeric database value but got: " + value);
     }
 
-    public record ResolvedApprover(Long userId, int stepOrder, ApprovalStepType stepType) {
+    private record UserAssignment(Long organizationId, Long positionId) {
+    }
+
+    public record ResolvedApprover(
+            Long userId,
+            int stepOrder,
+            ApprovalStepType stepType,
+            Long organizationId,
+            Long positionId) {
+
+        public ResolvedApprover(Long userId, int stepOrder, ApprovalStepType stepType) {
+            this(userId, stepOrder, stepType, null, null);
+        }
     }
 }

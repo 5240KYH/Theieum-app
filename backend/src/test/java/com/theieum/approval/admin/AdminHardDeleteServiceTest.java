@@ -62,6 +62,18 @@ class AdminHardDeleteServiceTest {
     }
 
     @Test
+    void hardDeleteUserRejectsOrganizationLeaderReferences() {
+        long userId = createUser("organization-leader-target", 2L, 4L, "APPROVER,APPLICANT");
+        jdbcTemplate.update("update organizations set leader_user_id = ? where id = ?", userId, 2L);
+
+        assertThatThrownBy(() -> service.hardDeleteUser(userId))
+                .isInstanceOf(WorkflowConflictException.class)
+                .hasMessageContaining("조직장으로 지정된 사용자");
+
+        assertThat(count("select count(*) from users where id = ?", userId)).isOne();
+    }
+
+    @Test
     void hardDeleteOrganizationRejectsChildOrganizations() {
         assertThatThrownBy(() -> service.hardDeleteOrganization(1L))
                 .isInstanceOf(WorkflowConflictException.class)
@@ -90,8 +102,8 @@ class AdminHardDeleteServiceTest {
                 """, Long.class);
         long userId = createUser("membership-user-target", 2L, 2L, "APPLICANT");
         jdbcTemplate.update("""
-                insert into user_organizations (user_id, organization_id, primary_flag, active, sort_order)
-                values (?, ?, false, true, 20)
+                insert into user_organizations (user_id, organization_id, position_id, primary_flag, active, sort_order)
+                values (?, ?, 2, false, true, 20)
                 """, userId, organizationId);
 
         assertThatThrownBy(() -> service.hardDeleteOrganization(organizationId))
@@ -110,8 +122,8 @@ class AdminHardDeleteServiceTest {
                 """, Long.class);
         long userId = createUser("approval-organization-applicant", 2L, 2L, "APPLICANT");
         jdbcTemplate.update("""
-                insert into user_organizations (user_id, organization_id, primary_flag, active, sort_order)
-                values (?, ?, false, true, 20)
+                insert into user_organizations (user_id, organization_id, position_id, primary_flag, active, sort_order)
+                values (?, ?, 2, false, true, 20)
                 """, userId, organizationId);
         jdbcTemplate.update("""
                 insert into applications (
@@ -133,6 +145,24 @@ class AdminHardDeleteServiceTest {
         assertThatThrownBy(() -> service.hardDeletePosition(4L))
                 .isInstanceOf(WorkflowConflictException.class)
                 .hasMessageContaining("사용자가 있거나 결재선에서 사용 중인 직위");
+    }
+
+    @Test
+    void hardDeletePositionRejectsUserMembershipReferences() {
+        long positionId = jdbcTemplate.queryForObject("""
+                insert into positions (name, rank_order, sort_order, active)
+                values ('겸직 소속 직위', 998, 998, true)
+                returning id
+                """, Long.class);
+        long userId = createUser("membership-position-target", 2L, 2L, "APPLICANT");
+        jdbcTemplate.update("""
+                insert into user_organizations (user_id, organization_id, position_id, primary_flag, active, sort_order)
+                values (?, 3, ?, false, true, 20)
+                """, userId, positionId);
+
+        assertThatThrownBy(() -> service.hardDeletePosition(positionId))
+                .isInstanceOf(WorkflowConflictException.class)
+                .hasMessageContaining("소속에서 사용 중인 직위");
     }
 
     @Test
@@ -203,9 +233,9 @@ class AdminHardDeleteServiceTest {
                 positionId,
                 roles);
         jdbcTemplate.update("""
-                insert into user_organizations (user_id, organization_id, primary_flag, active, sort_order)
-                values (?, ?, true, true, 10)
-                """, userId, organizationId);
+                insert into user_organizations (user_id, organization_id, position_id, primary_flag, active, sort_order)
+                values (?, ?, ?, true, true, 10)
+                """, userId, organizationId, positionId);
         return userId;
     }
 

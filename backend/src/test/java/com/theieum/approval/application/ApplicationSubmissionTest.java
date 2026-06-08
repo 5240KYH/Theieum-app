@@ -69,7 +69,7 @@ class ApplicationSubmissionTest {
 
         List<Map<String, Object>> steps = jdbcTemplate.queryForList(
                 """
-                select step_order, original_approver_id, status
+                select step_order, original_approver_id, approval_organization_id, approval_position_id, status
                 from application_approval_steps
                 where application_id = ?
                 order by step_order asc
@@ -79,6 +79,8 @@ class ApplicationSubmissionTest {
         assertThat(steps.getFirst())
                 .containsEntry("step_order", 1)
                 .containsEntry("original_approver_id", 18L)
+                .containsEntry("approval_organization_id", 3L)
+                .containsEntry("approval_position_id", 4L)
                 .containsEntry("status", "PENDING");
 
         List<Map<String, Object>> notifications = jdbcTemplate.queryForList(
@@ -113,6 +115,16 @@ class ApplicationSubmissionTest {
         assertThatThrownBy(() -> applicationService.submit(application.getId(), 3L))
                 .isInstanceOf(WorkflowConflictException.class)
                 .hasMessageContaining("Receipt image attachment is required");
+    }
+
+    @Test
+    void previewApprovalLineIncludesApproverOrganizationAndPositionNames() {
+        List<ApplicationService.ApprovalPreviewStep> steps = applicationService.previewApprovalLine(1L, 3L, 3L);
+
+        assertThat(steps).hasSize(1);
+        assertThat(steps.getFirst().approverName()).isEqualTo("개발팀장");
+        assertThat(steps.getFirst().organizationName()).isEqualTo("개발팀");
+        assertThat(steps.getFirst().positionName()).isEqualTo("팀장");
     }
 
     @Test
@@ -175,10 +187,10 @@ class ApplicationSubmissionTest {
     void draftStoresSelectedApprovalOrganization() {
         jdbcTemplate.update(
                 """
-                insert into user_organizations (user_id, organization_id, primary_flag, sort_order, active)
-                values (?, ?, false, 20, true)
+                insert into user_organizations (user_id, organization_id, position_id, primary_flag, sort_order, active)
+                values (?, ?, 1, false, 20, true)
                 on conflict (user_id, organization_id)
-                do update set active = true, primary_flag = false, sort_order = 20
+                do update set position_id = 1, active = true, primary_flag = false, sort_order = 20
                 """,
                 3L,
                 4L);
@@ -316,7 +328,7 @@ class ApplicationSubmissionTest {
     }
 
     @Test
-    void submitApplicationRenumbersMultiApproverResolverStepsForSnapshot() {
+    void submitApplicationAutoApprovesApplicantStepAndNotifiesNextApprover() {
         long approvalTypeId = 201L;
         jdbcTemplate.update(
                 """
@@ -351,11 +363,11 @@ class ApplicationSubmissionTest {
                 301L);
         jdbcTemplate.update(
                 """
-                insert into user_organizations (user_id, organization_id, primary_flag, sort_order, active)
+                insert into user_organizations (user_id, organization_id, position_id, primary_flag, sort_order, active)
                 values
-                    (?, ?, true, 10, true),
-                    (?, ?, true, 10, true),
-                    (?, ?, true, 10, true)
+                    (?, ?, 1, true, 10, true),
+                    (?, ?, 1, true, 10, true),
+                    (?, ?, 1, true, 10, true)
                 """,
                 301L,
                 301L,
@@ -422,6 +434,25 @@ class ApplicationSubmissionTest {
         assertThat(steps)
                 .extracting(step -> step.get("original_approver_id"))
                 .containsExactly(301L, 302L, 303L);
+        assertThat(steps)
+                .extracting(step -> step.get("status"))
+                .containsExactly("APPROVED", "PENDING", "PENDING");
+
+        List<Map<String, Object>> histories = jdbcTemplate.queryForList(
+                """
+                select approval_step_id, action, original_approver_id, actor_id, admin_override, comment
+                from approval_histories
+                where application_id = ?
+                order by id asc
+                """,
+                application.getId());
+        assertThat(histories).hasSize(1);
+        assertThat(histories.getFirst())
+                .containsEntry("action", "AUTO_APPROVED")
+                .containsEntry("original_approver_id", 301L)
+                .containsEntry("actor_id", 301L)
+                .containsEntry("admin_override", false)
+                .containsEntry("comment", "신청자와 결재자가 동일하여 자동 승인되었습니다.");
 
         List<Map<String, Object>> notifications = jdbcTemplate.queryForList(
                 """
@@ -432,7 +463,7 @@ class ApplicationSubmissionTest {
                 application.getId());
         assertThat(notifications).hasSize(1);
         assertThat(notifications.getFirst())
-                .containsEntry("recipient_id", 301L)
+                .containsEntry("recipient_id", 302L)
                 .containsEntry("notification_type", "APPROVAL_REQUESTED")
                 .containsEntry("channel", "IN_APP")
                 .containsEntry("status", "CREATED");

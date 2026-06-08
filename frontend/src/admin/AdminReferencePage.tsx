@@ -46,6 +46,8 @@ type ReferenceItem = AdminUser | AdminOrganization | AdminPosition | AdminApprov
 interface UserOrganizationMembershipDraft {
   organizationId: string;
   organizationName?: string;
+  positionId: string;
+  positionName?: string;
   primary: boolean;
   active: boolean;
   sortOrder: string;
@@ -81,7 +83,8 @@ const STEP_TEMPLATE = '1,DIRECT_USER,,,2,POSITION_ORDER';
 const ROLE_OPTIONS = ['ADMIN', 'MANAGER', 'APPROVER', 'APPLICANT'];
 const STEP_TYPE_OPTIONS = [
   { value: 'DIRECT_USER', label: '직접 사용자' },
-  { value: 'ORG_POSITION', label: '조직/직위' }
+  { value: 'ORG_POSITION', label: '조직/직위' },
+  { value: 'ORG_LEADER', label: '조직장' }
 ];
 const ORGANIZATION_SCOPE_OPTIONS = [
   { value: 'APPLICANT_ORG', label: '요청자 부서' },
@@ -131,12 +134,13 @@ function configs(): Record<AdminReferenceKind, PageConfig> {
       update: updateAdminOrganization as (id: number, payload: unknown) => Promise<ReferenceItem>,
       remove: deleteAdminOrganization,
       hardRemove: hardDeleteAdminOrganization,
-      headers: ['ID', '조직명', '상위조직', '레벨', '정렬', '상태', '관리'],
+      headers: ['ID', '조직명', '상위조직', '레벨', '정렬', '조직장', '상태', '관리'],
       fields: [
         { key: 'name', label: '조직명' },
         { key: 'parentId', label: '상위 조직 ID', type: 'number' },
         { key: 'levelNo', label: '레벨', type: 'number' },
         { key: 'sortOrder', label: '정렬', type: 'number' },
+        { key: 'leaderUserId', label: '조직장' },
         { key: 'active', label: '활성', type: 'checkbox' }
       ]
     },
@@ -243,6 +247,7 @@ function initialDraft(kind: AdminReferenceKind, item?: ReferenceItem): Draft {
       parentId: organization.parent_id ? String(organization.parent_id) : '',
       levelNo: String(organization.level_no),
       sortOrder: String(organization.sort_order),
+      leaderUserId: organization.leader_user_id ? String(organization.leader_user_id) : '',
       active: organization.active
     };
   }
@@ -354,10 +359,11 @@ function parseApprovalLineSteps(value: DraftValue | undefined): EditableApproval
 function serializeApprovalLineSteps(steps: EditableApprovalLineStep[]) {
   return steps.map((step, index) => {
     const stepType = step.stepType || 'DIRECT_USER';
+    const usesOrganizationScope = stepType === 'ORG_POSITION' || stepType === 'ORG_LEADER';
     return [
       step.stepOrder || String(index + 1),
       stepType,
-      stepType === 'ORG_POSITION' ? step.organizationScope || 'APPLICANT_ORG' : '',
+      usesOrganizationScope ? step.organizationScope || 'APPLICANT_ORG' : '',
       stepType === 'ORG_POSITION' ? step.positionId : '',
       stepType === 'DIRECT_USER' ? step.directUserId : '',
       'POSITION_ORDER'
@@ -386,10 +392,17 @@ function normalizePrimaryMembership(memberships: UserOrganizationMembershipDraft
   }));
 }
 
-function fallbackMembership(organizationId: string, organizationName?: string): UserOrganizationMembershipDraft {
+function fallbackMembership(
+  organizationId: string,
+  organizationName?: string,
+  positionId = '',
+  positionName?: string
+): UserOrganizationMembershipDraft {
   return {
     organizationId,
     organizationName,
+    positionId,
+    positionName,
     primary: true,
     active: true,
     sortOrder: '10'
@@ -406,6 +419,8 @@ function normalizeUserMemberships(user: AdminUser): UserOrganizationMembershipDr
         .map((membership) => ({
           organizationId: String(membership.organizationId),
           organizationName: membership.organizationName,
+          positionId: String(membership.positionId ?? user.position_id),
+          positionName: membership.positionName ?? user.position_name,
           primary: membership.primary,
           active: membership.active,
           sortOrder: String(membership.sortOrder)
@@ -413,7 +428,14 @@ function normalizeUserMemberships(user: AdminUser): UserOrganizationMembershipDr
     );
   }
 
-  return [fallbackMembership(String(user.organization_id), user.organization_name)];
+  return [
+    fallbackMembership(
+      String(user.organization_id),
+      user.organization_name,
+      String(user.position_id),
+      user.position_name
+    )
+  ];
 }
 
 function primaryOrganizationId(memberships: UserOrganizationMembershipDraft[], fallbackOrganizationId: DraftValue | undefined) {
@@ -422,11 +444,18 @@ function primaryOrganizationId(memberships: UserOrganizationMembershipDraft[], f
     ?? String(fallbackOrganizationId ?? '');
 }
 
+function primaryPositionId(memberships: UserOrganizationMembershipDraft[], fallbackPositionId: DraftValue | undefined) {
+  return memberships.find((membership) => membership.primary)?.positionId
+    ?? memberships[0]?.positionId
+    ?? String(fallbackPositionId ?? '');
+}
+
 function serializeUserMemberships(memberships: UserOrganizationMembershipDraft[]) {
   return normalizePrimaryMembership(memberships)
-    .filter((membership) => membership.organizationId)
+    .filter((membership) => membership.organizationId && membership.positionId)
     .map((membership, index) => ({
       organizationId: Number(membership.organizationId),
+      positionId: Number(membership.positionId),
       primary: membership.primary,
       active: membership.active,
       sortOrder: Number(membership.sortOrder || (index + 1) * 10)
@@ -436,28 +465,32 @@ function serializeUserMemberships(memberships: UserOrganizationMembershipDraft[]
 function userMembershipSummary(user: AdminUser) {
   return normalizeUserMemberships(user)
     .map((membership) => {
-      const label = membership.primary
-        ? '대표'
-        : membership.active ? '활성' : '비활성';
-      return `${label}: ${membership.organizationName ?? `#${membership.organizationId}`}`;
+      const organizationName = membership.organizationName ?? `#${membership.organizationId}`;
+      const positionName = membership.positionName ?? `#${membership.positionId}`;
+      const membershipName = `${organizationName} / ${positionName}`;
+      if (membership.primary) {
+        return membershipName;
+      }
+      return `겸직 : ${membershipName}(${membership.active ? '활성' : '비활성'})`;
     });
 }
 
 function isRequiredField(field: FieldConfig) {
-  return field.type !== 'checkbox' && field.key !== 'parentId';
+  return field.type !== 'checkbox' && field.key !== 'parentId' && field.key !== 'leaderUserId';
 }
 
 function buildPayload(kind: AdminReferenceKind, draft: Draft, isCreating: boolean) {
   if (kind === 'users') {
-    const organizationMemberships = serializeUserMemberships(userOrganizationMembershipDrafts(draft.organizationMemberships));
+    const memberships = userOrganizationMembershipDrafts(draft.organizationMemberships);
+    const organizationMemberships = serializeUserMemberships(memberships);
     return {
       loginId: String(draft.loginId ?? ''),
       ...(isCreating ? { password: String(draft.password ?? '') } : {}),
       name: String(draft.name ?? ''),
       email: String(draft.email ?? ''),
-      organizationId: requiredNumber(primaryOrganizationId(userOrganizationMembershipDrafts(draft.organizationMemberships), draft.organizationId)),
+      organizationId: requiredNumber(primaryOrganizationId(memberships, draft.organizationId)),
       organizationMemberships,
-      positionId: requiredNumber(draft.positionId),
+      positionId: requiredNumber(primaryPositionId(memberships, draft.positionId)),
       roles: String(draft.roles ?? 'APPLICANT'),
       active: Boolean(draft.active)
     };
@@ -469,6 +502,7 @@ function buildPayload(kind: AdminReferenceKind, draft: Draft, isCreating: boolea
       parentId: optionalNumber(draft.parentId),
       levelNo: optionalNumber(draft.levelNo),
       sortOrder: optionalNumber(draft.sortOrder),
+      leaderUserId: optionalNumber(draft.leaderUserId),
       active: Boolean(draft.active)
     };
   }
@@ -560,6 +594,15 @@ function userOptionLabel(user: AdminUser) {
   return `#${user.id} ${user.name}`;
 }
 
+function organizationLeaderOptions(users: AdminUser[], organizationId: string) {
+  return users.filter((user) => (
+    String(user.organization_id) === organizationId
+      || (user.organizationMemberships ?? []).some((membership) => (
+        String(membership.organizationId) === organizationId && membership.active
+      ))
+  ));
+}
+
 export function AdminReferencePage({ kind }: AdminReferencePageProps) {
   const auth = useAuth();
   const isAdmin = auth.hasRole('ADMIN');
@@ -612,7 +655,10 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
     targetKind = kind,
     shouldApply: () => boolean = () => true
   ) {
-    if (targetKind !== 'users' && targetKind !== 'approvalLines' && targetKind !== 'approvalOrgExceptions') {
+    if (targetKind !== 'users'
+      && targetKind !== 'organizations'
+      && targetKind !== 'approvalLines'
+      && targetKind !== 'approvalOrgExceptions') {
       setApprovalTypes([]);
       setOrganizations([]);
       setPositions([]);
@@ -631,7 +677,7 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
         targetKind === 'users' || targetKind === 'approvalLines'
           ? getAdminPositions()
           : Promise.resolve([]),
-        targetKind === 'approvalLines' || targetKind === 'approvalOrgExceptions'
+        targetKind === 'organizations' || targetKind === 'approvalLines' || targetKind === 'approvalOrgExceptions'
           ? getAdminUsers()
           : Promise.resolve([])
       ]);
@@ -653,7 +699,14 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
   function applyDefaultSelectValues(current: Draft) {
     if (kind === 'users') {
       const organizationId = String(current.organizationId || firstId(organizations));
-      const organizationMemberships = userOrganizationMembershipDrafts(current.organizationMemberships);
+      const positionId = String(current.positionId || firstId(positions));
+      const organizationMemberships = userOrganizationMembershipDrafts(current.organizationMemberships)
+        .map((membership) => ({
+          ...membership,
+          positionId: membership.positionId || positionId,
+          positionName: membership.positionName
+            ?? positions.find((position) => String(position.id) === (membership.positionId || positionId))?.name
+        }));
       return {
         ...current,
         organizationId,
@@ -662,10 +715,12 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
           : organizationId
             ? [fallbackMembership(
               organizationId,
-              organizations.find((organization) => String(organization.id) === organizationId)?.name
+              organizations.find((organization) => String(organization.id) === organizationId)?.name,
+              positionId,
+              positions.find((position) => String(position.id) === positionId)?.name
             )]
             : [],
-        positionId: current.positionId || firstId(positions)
+        positionId
       };
     }
 
@@ -920,27 +975,37 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
                       <span>{field.label} {isRequiredField(field) ? <RequiredMark /> : null}</span>
                       <UserOrganizationMembershipEditor
                         organizations={organizations}
+                        positions={positions}
                         value={userOrganizationMembershipDrafts(draft.organizationMemberships)}
                         onChange={(organizationMemberships) => {
                           updateDraftValue('organizationMemberships', organizationMemberships);
                           updateDraftValue('organizationId', primaryOrganizationId(organizationMemberships, draft.organizationId));
+                          updateDraftValue('positionId', primaryPositionId(organizationMemberships, draft.positionId));
                         }}
                       />
                     </div>
                   );
                 }
                 if (kind === 'users' && field.key === 'positionId') {
+                  return null;
+                }
+                if (kind === 'organizations' && field.key === 'leaderUserId') {
+                  const organizationId = editingId == null ? '' : String(editingId);
+                  const leaders = organizationLeaderOptions(selectableUsers, organizationId);
                   return (
                     <SelectField
                       key={field.key}
                       label={field.label}
-                      required={isRequiredField(field)}
-                      value={String(draft.positionId ?? '')}
-                      options={positions.map((position) => ({
-                        value: String(position.id),
-                        label: position.name
-                      }))}
-                      onChange={(value) => updateDraftValue('positionId', value)}
+                      required={false}
+                      value={String(draft.leaderUserId ?? '')}
+                      options={[
+                        { value: '', label: '미지정' },
+                        ...leaders.map((leader) => ({
+                          value: String(leader.id),
+                          label: userOptionLabel(leader)
+                        }))
+                      ]}
+                      onChange={(value) => updateDraftValue('leaderUserId', value)}
                     />
                   );
                 }
@@ -1202,10 +1267,12 @@ function SelectField({
 
 function UserOrganizationMembershipEditor({
   organizations,
+  positions,
   value,
   onChange
 }: {
   organizations: AdminOrganization[];
+  positions: AdminPosition[];
   value: UserOrganizationMembershipDraft[];
   onChange: (value: UserOrganizationMembershipDraft[]) => void;
 }) {
@@ -1240,11 +1307,17 @@ function UserOrganizationMembershipEditor({
     if (!nextOrganization) {
       return;
     }
+    const firstPosition = positions[0];
 
     onChange(normalizePrimaryMembership([
       ...memberships,
       {
-        ...fallbackMembership(String(nextOrganization.id), nextOrganization.name),
+        ...fallbackMembership(
+          String(nextOrganization.id),
+          nextOrganization.name,
+          firstPosition ? String(firstPosition.id) : '',
+          firstPosition?.name
+        ),
         primary: memberships.length === 0,
         sortOrder: String((memberships.length + 1) * 10)
       }
@@ -1266,10 +1339,11 @@ function UserOrganizationMembershipEditor({
       {memberships.map((membership, index) => {
         const organizationName = membershipOrganizationName(membership, organizations);
         return (
-          <div className="approval-line-step-row" key={`${membership.organizationId}-${index}`}>
+          <div className="approval-line-step-row user-membership-row" key={`${membership.organizationId}-${index}`}>
             <label>
-              <span>{index + 1}번째 조직 <RequiredMark /></span>
+              <span>소속 조직 <RequiredMark /></span>
               <select
+                aria-label="소속 조직"
                 value={membership.organizationId}
                 onChange={(event) => {
                   const organization = organizations.find((item) => String(item.id) === event.target.value);
@@ -1286,6 +1360,27 @@ function UserOrganizationMembershipEditor({
                     disabled={selectedOrganizationIds.has(String(organization.id)) && String(organization.id) !== membership.organizationId}
                   >
                     {organization.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>소속 직위 <RequiredMark /></span>
+              <select
+                aria-label="소속 직위"
+                value={membership.positionId}
+                onChange={(event) => {
+                  const position = positions.find((item) => String(item.id) === event.target.value);
+                  updateMembership(index, {
+                    positionId: event.target.value,
+                    positionName: position?.name
+                  });
+                }}
+              >
+                {positions.length === 0 ? <option value="">선택</option> : null}
+                {positions.map((position) => (
+                  <option key={position.id} value={position.id}>
+                    {position.name}
                   </option>
                 ))}
               </select>
@@ -1309,14 +1404,6 @@ function UserOrganizationMembershipEditor({
                 onChange={(event) => updateMembership(index, { active: event.target.checked })}
               />
               <span>활성</span>
-            </label>
-            <label>
-              <span>{index + 1}번째 정렬 <RequiredMark /></span>
-              <input
-                type="number"
-                value={membership.sortOrder}
-                onChange={(event) => updateMembership(index, { sortOrder: event.target.value })}
-              />
             </label>
             <button
               className="secondary-button danger-button"
@@ -1372,6 +1459,16 @@ function ApprovalLineStepsEditor({
           stepType,
           organizationScope: step.organizationScope || 'APPLICANT_ORG',
           positionId: step.positionId || firstPositionId,
+          directUserId: '',
+          sortPolicy: 'POSITION_ORDER'
+        };
+      }
+      if (stepType === 'ORG_LEADER') {
+        return {
+          ...step,
+          stepType,
+          organizationScope: step.organizationScope || 'APPLICANT_ORG',
+          positionId: '',
           directUserId: '',
           sortPolicy: 'POSITION_ORDER'
         };
@@ -1437,7 +1534,7 @@ function ApprovalLineStepsEditor({
                 ))}
               </select>
             </label>
-            {step.stepType === 'ORG_POSITION' ? (
+            {step.stepType === 'ORG_POSITION' || step.stepType === 'ORG_LEADER' ? (
               <>
                 <label>
                   <span>{labelPrefix} 조직범위 <RequiredMark /></span>
@@ -1451,19 +1548,21 @@ function ApprovalLineStepsEditor({
                     ))}
                   </select>
                 </label>
-                <label>
-                  <span>{labelPrefix} 직위 <RequiredMark /></span>
-                  <select
-                    aria-label={`${labelPrefix} 직위`}
-                    value={step.positionId || firstPositionId}
-                    onChange={(event) => updateStep(index, 'positionId', event.target.value)}
-                  >
-                    {positions.length === 0 ? <option value="">선택</option> : null}
-                    {positions.map((position) => (
-                      <option key={position.id} value={position.id}>{position.name}</option>
-                    ))}
-                  </select>
-                </label>
+                {step.stepType === 'ORG_POSITION' ? (
+                  <label>
+                    <span>{labelPrefix} 직위 <RequiredMark /></span>
+                    <select
+                      aria-label={`${labelPrefix} 직위`}
+                      value={step.positionId || firstPositionId}
+                      onChange={(event) => updateStep(index, 'positionId', event.target.value)}
+                    >
+                      {positions.length === 0 ? <option value="">선택</option> : null}
+                      {positions.map((position) => (
+                        <option key={position.id} value={position.id}>{position.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
               </>
             ) : (
               <label>
@@ -1513,7 +1612,7 @@ function renderCells(kind: AdminReferenceKind, item: ReferenceItem): ReactNode {
         <td>{user.name}</td>
         <td>{user.email}</td>
         <td>
-          <div className="definition-grid compact-definition">
+          <div className="user-organization-summary">
             {userMembershipSummary(user).map((summary) => (
               <span key={summary}>{summary}</span>
             ))}
@@ -1540,6 +1639,11 @@ function renderCells(kind: AdminReferenceKind, item: ReferenceItem): ReactNode {
         <td>{organization.parent_id ? `#${organization.parent_id}` : '-'}</td>
         <td>{organization.level_no}</td>
         <td>{organization.sort_order}</td>
+        <td>
+          {organization.leader_user_name
+            ? `${organization.leader_user_name} / ${organization.leader_position_name ?? '-'}`
+            : '-'}
+        </td>
         <td>{statusText(organization.active)}</td>
       </>
     );

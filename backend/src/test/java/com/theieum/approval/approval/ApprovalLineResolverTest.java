@@ -115,6 +115,25 @@ class ApprovalLineResolverTest {
     }
 
     @Test
+    void organizationPositionStepUsesMembershipPositionNotUserMirrorPosition() {
+        long approvalTypeId = 110L;
+        insertOrganization(160L, "겸직 직위 대표 조직", null, 1, 160);
+        insertOrganization(161L, "겸직 직위 결재 대상 조직", null, 1, 161);
+        insertUser(160L, "multi-position-approver", "겸직직위결재자", 160L, 5L);
+        insertUserOrganization(160L, 161L, 4L, false, 20, true);
+        insertUser(161L, "multi-position-applicant", "겸직직위신청자", 161L, 1L);
+        insertApprovalType(approvalTypeId, "겸직 소속별 직위 조회 테스트");
+        insertApprovalLine(110L, approvalTypeId, "겸직 소속별 직위 결재선");
+        insertOrgPositionStep(113L, 110L, 1, 4L);
+
+        List<ResolvedApprover> approvers = resolver.resolve(approvalTypeId, 161L, 161L);
+
+        assertThat(approvers)
+                .extracting(ResolvedApprover::userId)
+                .containsExactly(160L);
+    }
+
+    @Test
     void parentOrganizationScopeUsesImmediateParentOrganization() {
         long approvalTypeId = 106L;
         insertOrganization(130L, "상위 조직 테스트팀", 1L, 2, 130);
@@ -198,6 +217,76 @@ class ApprovalLineResolverTest {
         assertThat(approvers)
                 .extracting(ResolvedApprover::stepOrder)
                 .containsExactly(1);
+    }
+
+    @Test
+    void organizationLeaderStepResolvesTeamAndParentLeaders() {
+        long approvalTypeId = 203L;
+        insertOrganization(230L, "조직장 최상위", null, 1, 230);
+        insertOrganization(231L, "조직장 부", 230L, 2, 10);
+        insertOrganization(232L, "조직장 팀", 231L, 3, 10);
+        insertUser(230L, "org-leader-root", "조직장최상위", 230L, 5L);
+        insertUser(231L, "org-leader-dept", "조직장부", 231L, 4L);
+        insertUser(232L, "org-leader-team", "조직장팀", 232L, 4L);
+        insertUser(233L, "org-leader-applicant", "조직장신청자", 232L, 1L);
+        setOrganizationLeader(230L, 230L);
+        setOrganizationLeader(231L, 231L);
+        setOrganizationLeader(232L, 232L);
+        insertApprovalType(approvalTypeId, "조직장 결재선 테스트");
+        insertApprovalLine(203L, approvalTypeId, "조직장 결재선");
+        insertOrgLeaderStep(206L, 203L, 1, "APPLICANT_ORG");
+        insertOrgLeaderStep(207L, 203L, 2, "PARENT_ORG");
+
+        List<ResolvedApprover> approvers = resolver.resolve(approvalTypeId, 233L, 232L);
+
+        assertThat(approvers)
+                .extracting(ResolvedApprover::userId)
+                .containsExactly(232L, 231L);
+        assertThat(approvers)
+                .extracting(ResolvedApprover::organizationId)
+                .containsExactly(232L, 231L);
+        assertThat(approvers)
+                .extracting(ResolvedApprover::positionId)
+                .containsExactly(4L, 4L);
+        assertThat(approvers)
+                .extracting(ResolvedApprover::stepType)
+                .containsExactly(ApprovalStepType.ORG_LEADER, ApprovalStepType.ORG_LEADER);
+    }
+
+    @Test
+    void organizationLeaderStepWorksWhenSelectedOrganizationIsDepartment() {
+        long approvalTypeId = 204L;
+        insertOrganization(240L, "부 조직장 최상위", null, 1, 240);
+        insertOrganization(241L, "부 조직장 부", 240L, 2, 10);
+        insertUser(240L, "department-root-leader", "부조직장최상위", 240L, 5L);
+        insertUser(241L, "department-leader", "부조직장", 241L, 4L);
+        insertUser(242L, "department-applicant", "부신청자", 241L, 1L);
+        setOrganizationLeader(240L, 240L);
+        setOrganizationLeader(241L, 241L);
+        insertApprovalType(approvalTypeId, "부 조직장 결재선 테스트");
+        insertApprovalLine(204L, approvalTypeId, "부 조직장 결재선");
+        insertOrgLeaderStep(208L, 204L, 1, "APPLICANT_ORG");
+        insertOrgLeaderStep(209L, 204L, 2, "PARENT_ORG");
+
+        List<ResolvedApprover> approvers = resolver.resolve(approvalTypeId, 242L, 241L);
+
+        assertThat(approvers)
+                .extracting(ResolvedApprover::userId)
+                .containsExactly(241L, 240L);
+    }
+
+    @Test
+    void organizationLeaderStepWithoutActiveLeaderFailsLineResolution() {
+        long approvalTypeId = 205L;
+        insertOrganization(250L, "조직장 없음 조직", null, 1, 250);
+        insertUser(250L, "missing-leader-applicant", "조직장없음신청자", 250L, 1L);
+        insertApprovalType(approvalTypeId, "조직장 없음 테스트");
+        insertApprovalLine(205L, approvalTypeId, "조직장 없음 결재선");
+        insertOrgLeaderStep(210L, 205L, 1, "APPLICANT_ORG");
+
+        assertThatThrownBy(() -> resolver.resolve(approvalTypeId, 250L, 250L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("ORG_LEADER step has no active organization leader");
     }
 
     @Test
@@ -328,6 +417,24 @@ class ApprovalLineResolverTest {
                 positionId);
     }
 
+    private void insertOrgLeaderStep(long id, long approvalLineId, int stepOrder, String organizationScope) {
+        jdbcTemplate.update(
+                """
+                insert into approval_line_steps (
+                    id,
+                    approval_line_id,
+                    step_order,
+                    step_type,
+                    organization_scope,
+                    sort_policy
+                ) values (?, ?, ?, 'ORG_LEADER', ?, 'POSITION_ORDER')
+                """,
+                id,
+                approvalLineId,
+                stepOrder,
+                organizationScope);
+    }
+
     private void insertOrganization(long id, String name, Long parentId, int levelNo, int sortOrder) {
         jdbcTemplate.update(
                 """
@@ -364,7 +471,7 @@ class ApprovalLineResolverTest {
                 loginId + "@theieum.local",
                 organizationId,
                 positionId);
-        insertUserOrganization(id, organizationId, true, 10, true);
+        insertUserOrganization(id, organizationId, positionId, true, 10, true);
     }
 
     private void insertUserOrganization(
@@ -373,16 +480,35 @@ class ApprovalLineResolverTest {
             boolean primary,
             int sortOrder,
             boolean active) {
+        Long positionId = jdbcTemplate.queryForObject(
+                "select position_id from users where id = ?",
+                Long.class,
+                userId);
+        insertUserOrganization(userId, organizationId, positionId, primary, sortOrder, active);
+    }
+
+    private void insertUserOrganization(
+            long userId,
+            long organizationId,
+            long positionId,
+            boolean primary,
+            int sortOrder,
+            boolean active) {
         jdbcTemplate.update(
                 """
-                insert into user_organizations (user_id, organization_id, primary_flag, sort_order, active)
-                values (?, ?, ?, ?, ?)
+                insert into user_organizations (user_id, organization_id, position_id, primary_flag, sort_order, active)
+                values (?, ?, ?, ?, ?, ?)
                 """,
                 userId,
                 organizationId,
+                positionId,
                 primary,
                 sortOrder,
                 active);
+    }
+
+    private void setOrganizationLeader(long organizationId, long leaderUserId) {
+        jdbcTemplate.update("update organizations set leader_user_id = ? where id = ?", leaderUserId, organizationId);
     }
 
     @TestConfiguration

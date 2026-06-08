@@ -57,6 +57,8 @@ const submittedResponse = {
       id: 77,
       stepOrder: 1,
       originalApprover: { id: 4, name: '팀장01' },
+      organizationName: '개발팀',
+      positionName: '팀장',
       status: 'PENDING',
       actedAt: null
     }
@@ -85,8 +87,16 @@ function mockDefaultApprovalFetch() {
 
     if (url === '/api/applications/approval-preview?approvalTypeId=1&approvalOrganizationId=3') {
       return jsonResponse([
-        { stepOrder: 1, approver: { id: 18, name: '개발팀장' } },
-        { stepOrder: 2, approver: { id: 20, name: '대표' } }
+        {
+          stepOrder: 1,
+          approver: { id: 3, name: '채동훈', organizationName: '미디어팀', positionName: '팀장' },
+          autoApprovalExpected: true
+        },
+        {
+          stepOrder: 2,
+          approver: { id: 20, name: '정은총', organizationName: '더이음사랑의교회', positionName: '대표' },
+          autoApprovalExpected: false
+        }
       ]);
     }
 
@@ -145,12 +155,18 @@ describe('ApplicationForm', () => {
 
     const organizationSelect = await screen.findByLabelText('결재 기준 조직');
     expect(organizationSelect).toHaveValue('3');
-    expect(organizationSelect).toHaveDisplayValue('개발팀 (대표)');
+    expect(organizationSelect).toHaveDisplayValue('개발팀');
     expect(await screen.findByRole('heading', { name: '예상 결재선' })).toBeInTheDocument();
     expect(screen.getByText('1단계')).toBeInTheDocument();
-    expect(screen.getByText('개발팀장')).toBeInTheDocument();
+    expect(screen.getByText('미디어팀')).toBeInTheDocument();
+    expect(screen.getByText('채동훈')).toBeInTheDocument();
+    expect(screen.getByText('팀장')).toBeInTheDocument();
+    expect(screen.getByText('자동')).toBeInTheDocument();
     expect(screen.getByText('2단계')).toBeInTheDocument();
+    expect(screen.getByText('더이음사랑의교회')).toBeInTheDocument();
+    expect(screen.getByText('정은총')).toBeInTheDocument();
     expect(screen.getByText('대표')).toBeInTheDocument();
+    expect(screen.queryByText('개발팀 (대표)')).not.toBeInTheDocument();
     expect(
       screen.getByRole('heading', { name: '예상 결재선' }).compareDocumentPosition(screen.getByLabelText('신청일자'))
         & Node.DOCUMENT_POSITION_FOLLOWING
@@ -171,13 +187,13 @@ describe('ApplicationForm', () => {
 
       if (url === '/api/applications/approval-preview?approvalTypeId=1&approvalOrganizationId=3') {
         return jsonResponse([
-          { stepOrder: 1, approver: { id: 18, name: '개발팀장' } }
+          { stepOrder: 1, approver: { id: 18, name: '개발팀장', organizationName: '개발팀', positionName: '팀장' }, autoApprovalExpected: false }
         ]);
       }
 
       if (url === '/api/applications/approval-preview?approvalTypeId=1&approvalOrganizationId=4') {
         return jsonResponse([
-          { stepOrder: 1, approver: { id: 31, name: '재무팀장' } }
+          { stepOrder: 1, approver: { id: 31, name: '재무팀장', organizationName: '재무팀', positionName: '팀장' }, autoApprovalExpected: false }
         ]);
       }
 
@@ -285,7 +301,7 @@ describe('ApplicationForm', () => {
 
       if (url === '/api/applications/approval-preview?approvalTypeId=1&approvalOrganizationId=3') {
         return jsonResponse([
-          { stepOrder: 1, approver: { id: 18, name: '개발팀장' } }
+          { stepOrder: 1, approver: { id: 18, name: '개발팀장', organizationName: '개발팀', positionName: '팀장' }, autoApprovalExpected: false }
         ]);
       }
 
@@ -397,7 +413,7 @@ describe('ApplicationForm', () => {
 
       if (url === '/api/applications/approval-preview?approvalTypeId=1&approvalOrganizationId=3') {
         return jsonResponse([
-          { stepOrder: 1, approver: { id: 18, name: '개발팀장' } }
+          { stepOrder: 1, approver: { id: 18, name: '개발팀장', organizationName: '개발팀', positionName: '팀장' }, autoApprovalExpected: false }
         ]);
       }
 
@@ -488,7 +504,7 @@ describe('ApplicationForm', () => {
 
       if (url === '/api/applications/approval-preview?approvalTypeId=1&approvalOrganizationId=4') {
         return jsonResponse([
-          { stepOrder: 1, approver: { id: 31, name: '재무팀장' } }
+          { stepOrder: 1, approver: { id: 31, name: '재무팀장', organizationName: '재무팀', positionName: '팀장' }, autoApprovalExpected: false }
         ]);
       }
 

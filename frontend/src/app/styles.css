@@ -488,6 +488,21 @@ h1 {
   min-width: 0;
 }
 
+.user-membership-row {
+  grid-template-columns: minmax(180px, 1fr) minmax(160px, 0.8fr) auto auto auto;
+}
+
+.user-organization-summary {
+  display: grid;
+  gap: 4px;
+  line-height: 1.5;
+}
+
+.user-organization-summary span {
+  display: block;
+  white-space: nowrap;
+}
+
 .tree-cell {
   align-items: center;
   display: inline-flex;
@@ -600,9 +615,41 @@ h1 {
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   display: inline-flex;
-  gap: 10px;
+  gap: 8px;
   min-height: 44px;
   padding: 8px 12px;
+}
+
+.approval-preview-step-order {
+  background: #ecfdf5;
+  border: 1px solid #c8ead8;
+  border-radius: 999px;
+  color: #2e6b4d;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 5px 8px;
+  white-space: nowrap;
+}
+
+.approval-preview-organization,
+.approval-preview-position {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.approval-preview-auto {
+  background: #f8fafc;
+  border: 1px solid #dbe4ee;
+  border-radius: 999px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 4px 7px;
+  white-space: nowrap;
 }
 
 .empty-state.large {
@@ -743,7 +790,7 @@ h1 {
   border-radius: 8px;
   display: grid;
   gap: 12px;
-  grid-template-columns: 36px minmax(120px, 1fr) auto minmax(120px, auto);
+  grid-template-columns: 36px minmax(80px, auto) minmax(120px, 1fr) minmax(70px, auto) auto minmax(120px, auto);
   padding: 12px;
 }
 

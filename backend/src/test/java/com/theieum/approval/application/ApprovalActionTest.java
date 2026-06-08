@@ -41,7 +41,7 @@ class ApprovalActionTest {
         long applicationId = submitMultiApproverApplication();
         long firstStepId = stepId(applicationId, 1);
 
-        applicationService.approve(firstStepId, 3L, "확인했습니다");
+        applicationService.approve(firstStepId, 18L, "확인했습니다");
 
         assertThat(applicationStatus(applicationId)).isEqualTo("IN_APPROVAL");
         assertThat(stepStatus(applicationId, 1)).isEqualTo("APPROVED");
@@ -52,8 +52,8 @@ class ApprovalActionTest {
         assertThat(histories.getFirst())
                 .containsEntry("approval_step_id", firstStepId)
                 .containsEntry("action", "APPROVED")
-                .containsEntry("original_approver_id", 3L)
-                .containsEntry("actor_id", 3L)
+                .containsEntry("original_approver_id", 18L)
+                .containsEntry("actor_id", 18L)
                 .containsEntry("admin_override", false)
                 .containsEntry("comment", "확인했습니다");
 
@@ -109,6 +109,68 @@ class ApprovalActionTest {
                 .containsEntry("notification_type", "APPLICATION_APPROVED")
                 .containsEntry("channel", "IN_APP")
                 .containsEntry("status", "CREATED");
+    }
+
+    @Test
+    void approvalAutoApprovesApplicantStepWhenItBecomesCurrentAndNotifiesNextApprover() {
+        long approvalTypeId = nextId("approval_types");
+        long approvalLineId = nextId("approval_lines");
+        long firstStepId = nextId("approval_line_steps");
+        jdbcTemplate.update(
+                "insert into approval_types (id, name, description, active) values (?, ?, ?, true)",
+                approvalTypeId,
+                "중간 자동승인 테스트",
+                "test approval type");
+        jdbcTemplate.update(
+                "insert into approval_lines (id, approval_type_id, name, active) values (?, ?, ?, true)",
+                approvalLineId,
+                approvalTypeId,
+                "중간 자동승인 결재선");
+        jdbcTemplate.update(
+                """
+                insert into approval_line_steps (
+                    id,
+                    approval_line_id,
+                    step_order,
+                    step_type,
+                    direct_user_id,
+                    sort_policy
+                ) values
+                    (?, ?, 1, 'DIRECT_USER', 18, 'POSITION_ORDER'),
+                    (?, ?, 2, 'DIRECT_USER', 3, 'POSITION_ORDER'),
+                    (?, ?, 3, 'DIRECT_USER', 1, 'POSITION_ORDER')
+                """,
+                firstStepId,
+                approvalLineId,
+                firstStepId + 1,
+                approvalLineId,
+                firstStepId + 2,
+                approvalLineId);
+        Application application = createDraft(approvalTypeId);
+        attachDefaultPng(application.getId());
+        applicationService.submit(application.getId(), 3L);
+
+        applicationService.approve(stepId(application.getId(), 1), 18L, "확인했습니다");
+
+        assertThat(applicationStatus(application.getId())).isEqualTo("IN_APPROVAL");
+        assertThat(stepStatus(application.getId(), 1)).isEqualTo("APPROVED");
+        assertThat(stepStatus(application.getId(), 2)).isEqualTo("APPROVED");
+        assertThat(stepStatus(application.getId(), 3)).isEqualTo("PENDING");
+
+        List<Map<String, Object>> histories = histories(application.getId());
+        assertThat(histories).hasSize(2);
+        assertThat(histories.getLast())
+                .containsEntry("action", "AUTO_APPROVED")
+                .containsEntry("original_approver_id", 3L)
+                .containsEntry("actor_id", 3L)
+                .containsEntry("admin_override", false)
+                .containsEntry("comment", "신청자와 결재자가 동일하여 자동 승인되었습니다.");
+
+        List<Map<String, Object>> notifications = notifications(application.getId());
+        assertThat(notifications).hasSize(2);
+        assertThat(notifications.getLast())
+                .containsEntry("recipient_id", 1L)
+                .containsEntry("notification_type", "APPROVAL_REQUESTED");
     }
 
     @Test
@@ -284,15 +346,16 @@ class ApprovalActionTest {
                     approval_line_id,
                     step_order,
                     step_type,
-                    organization_scope,
-                    position_id,
+                    direct_user_id,
                     sort_policy
-                ) values (?, ?, ?, 'ORG_POSITION', 'APPLICANT_ORG', ?, 'POSITION_ORDER')
+                ) values
+                    (?, ?, 1, 'DIRECT_USER', 18, 'POSITION_ORDER'),
+                    (?, ?, 2, 'DIRECT_USER', 4, 'POSITION_ORDER')
                 """,
                 approvalLineStepId,
                 approvalLineId,
-                1,
-                1L);
+                approvalLineStepId + 1,
+                approvalLineId);
         Application application = createDraft(approvalTypeId);
         attachDefaultPng(application.getId());
         applicationService.submit(application.getId(), 3L);
