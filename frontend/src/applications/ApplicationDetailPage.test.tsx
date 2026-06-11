@@ -142,6 +142,57 @@ describe('ApplicationDetailPage', () => {
     });
   });
 
+  it('내 신청서 상세에서 목록으로 돌아갈 수 있다', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url === '/api/applications/100') {
+        return new Response(JSON.stringify({ ...applicationResponse, attachments: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      return new Response(null, { status: 404 });
+    }));
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: '신청서 상세' });
+    await userEvent.click(screen.getByRole('link', { name: '내 신청서로 돌아가기' }));
+
+    expect(window.location.pathname).toBe('/applications/my');
+  });
+
+  it('전체 신청서에서 진입한 상세는 전체 신청서 목록으로 돌아간다', async () => {
+    window.history.pushState({}, '', '/applications/100?from=admin-applications');
+    localStorage.setItem('authUser', JSON.stringify({
+      id: 1,
+      loginId: 'admin',
+      name: '관리자',
+      roles: ['ADMIN']
+    }));
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url === '/api/applications/100') {
+        return new Response(JSON.stringify({ ...applicationResponse, attachments: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      return new Response(null, { status: 404 });
+    }));
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: '신청서 상세' });
+    await userEvent.click(screen.getByRole('link', { name: '전체 신청서로 돌아가기' }));
+
+    expect(window.location.pathname).toBe('/admin/applications');
+  });
+
   it('첨부 썸네일을 클릭하면 확대 미리보기를 표시한다', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

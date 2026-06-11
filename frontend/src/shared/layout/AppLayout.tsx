@@ -26,13 +26,13 @@ import { NotificationDrawer } from '../notifications/NotificationDrawer';
 
 const workNavItems = [
   { to: '/dashboard', label: '대시보드', icon: LayoutDashboard },
-  { to: '/calendar', label: '캘린더', icon: CalendarDays },
   { to: '/applications/new', label: '새 신청', icon: FilePlus2 },
   { to: '/applications/my', label: '내 신청서', icon: FileClock },
   { to: '/approvals', label: '결재함', icon: ListChecks }
 ];
 
 const referenceNavItems = [
+  { to: '/admin/calendar', label: '캘린더', icon: CalendarDays },
   { to: '/admin/users', label: '사용자 관리', icon: UsersRound },
   { to: '/admin/organizations', label: '조직 관리', icon: Building2 },
   { to: '/admin/positions', label: '직위 관리', icon: ShieldCheck },

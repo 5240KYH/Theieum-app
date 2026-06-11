@@ -1,5 +1,5 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, X } from 'lucide-react';
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
+import { CalendarDays, Plus, Trash2, X } from 'lucide-react';
 
 import { useAuth } from '../auth/AuthContext';
 import { ApiError } from '../shared/api';
@@ -51,6 +51,72 @@ function apiMessage(error: unknown) {
     return error.message;
   }
   return '일정을 처리하지 못했습니다.';
+}
+
+const COMPLETE_DATE_PATTERN = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+
+function formatDateInput(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 8);
+
+  if (digits.length <= 4) {
+    return digits;
+  }
+
+  if (digits.length <= 6) {
+    return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+  }
+
+  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6)}`;
+}
+
+function normalizedPickerValue(value: string) {
+  return COMPLETE_DATE_PATTERN.test(value) ? value : '';
+}
+
+interface DatePickerFieldProps {
+  label: string;
+  value: string;
+  required?: boolean;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}
+
+function DatePickerField({ label, value, required, disabled, onChange }: DatePickerFieldProps) {
+  function handleTextChange(event: ChangeEvent<HTMLInputElement>) {
+    onChange(formatDateInput(event.target.value));
+  }
+
+  return (
+    <div className="calendar-date-field">
+      <span className="field-label">{label}</span>
+      <div className="calendar-date-inputs">
+        <input
+          aria-label={label}
+          type="text"
+          inputMode="numeric"
+          maxLength={10}
+          pattern="\d{4}-\d{2}-\d{2}"
+          placeholder="YYYY-MM-DD"
+          value={value}
+          onChange={handleTextChange}
+          required={required}
+          disabled={disabled}
+        />
+        <span className="calendar-native-picker">
+          <CalendarDays aria-hidden="true" size={16} />
+          <input
+            className="calendar-native-date-input"
+            aria-label={`${label} 일자 직접 선택`}
+            type="date"
+            value={normalizedPickerValue(value)}
+            onChange={(event) => onChange(event.target.value)}
+            required={required}
+            disabled={disabled}
+          />
+        </span>
+      </div>
+    </div>
+  );
 }
 
 export function CalendarPage() {
@@ -253,20 +319,17 @@ export function CalendarPage() {
                   disabled={isReadOnlyModal}
                 />
               </label>
-              <label>
-                시작일
-                <input
-                  type="date"
-                  value={form.startDate}
-                  onChange={(event) => setForm((value) => ({
+              <DatePickerField
+                label="시작일"
+                value={form.startDate}
+                onChange={(nextDate) => setForm((value) => ({
                     ...value,
-                    startDate: event.target.value,
-                    endDate: value.endDate || event.target.value
+                    startDate: nextDate,
+                    endDate: value.endDate || nextDate
                   }))}
-                  required
-                  disabled={isReadOnlyModal}
-                />
-              </label>
+                required
+                disabled={isReadOnlyModal}
+              />
               <label>
                 시작 시간
                 <input
@@ -277,16 +340,13 @@ export function CalendarPage() {
                   disabled={isReadOnlyModal || form.allDay}
                 />
               </label>
-              <label>
-                종료일
-                <input
-                  type="date"
-                  value={form.endDate}
-                  onChange={(event) => setForm((value) => ({ ...value, endDate: event.target.value }))}
-                  required
-                  disabled={isReadOnlyModal}
-                />
-              </label>
+              <DatePickerField
+                label="종료일"
+                value={form.endDate}
+                onChange={(nextDate) => setForm((value) => ({ ...value, endDate: nextDate }))}
+                required
+                disabled={isReadOnlyModal}
+              />
               <label>
                 종료 시간
                 <input

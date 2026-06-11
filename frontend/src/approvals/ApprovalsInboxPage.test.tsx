@@ -46,6 +46,15 @@ const inboxItem = {
   receivedAt: '2026-06-03T01:05:00Z'
 };
 
+const julyInboxItem = {
+  ...inboxItem,
+  stepId: 901,
+  applicationId: 101,
+  receiptDate: '2026-07-02',
+  vendor: '카페',
+  receivedAt: '2026-07-03T01:05:00Z'
+};
+
 describe('ApprovalsInboxPage', () => {
   let storage: Storage;
 
@@ -107,5 +116,43 @@ describe('ApprovalsInboxPage', () => {
         method: 'POST'
       }));
     });
+  });
+
+  it('결재 대기 목록을 접수기간으로 검색하고 전체기간으로 되돌린다', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/approvals/inbox') {
+        return new Response(JSON.stringify([inboxItem, julyInboxItem]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }));
+
+    render(<App />);
+
+    const searchRegion = await screen.findByRole('region', { name: '검색조건' });
+    expect(searchRegion).toHaveClass('search-condition-panel');
+    expect(searchRegion).toHaveTextContent('검색조건');
+    expect((await screen.findAllByText('문구점')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('카페').length).toBeGreaterThan(0);
+
+    await userEvent.type(screen.getByLabelText('접수기간 From'), '20260699');
+    await userEvent.type(screen.getByLabelText('접수기간 To'), '202606');
+
+    expect(screen.getByLabelText('접수기간 From')).toHaveValue('2026-06');
+    expect(screen.getByLabelText('접수기간 To')).toHaveValue('2026-06');
+    expect(screen.getAllByText('문구점').length).toBeGreaterThan(0);
+    expect(screen.queryAllByText('카페')).toHaveLength(0);
+
+    await userEvent.click(screen.getByRole('button', { name: '전체기간' }));
+
+    expect(screen.getByLabelText('접수기간 From')).toHaveValue('');
+    expect(screen.getByLabelText('접수기간 To')).toHaveValue('');
+    expect(screen.getAllByText('카페').length).toBeGreaterThan(0);
   });
 });

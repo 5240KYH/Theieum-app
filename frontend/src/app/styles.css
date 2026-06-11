@@ -359,6 +359,7 @@ h1 {
 .admin-edit-panel select,
 .admin-edit-panel textarea,
 .compact-modal input,
+.inline-field input,
 .inline-field select,
 .wide-field textarea,
 .comment-input {
@@ -380,6 +381,7 @@ h1 {
 .admin-edit-panel select:focus,
 .admin-edit-panel textarea:focus,
 .compact-modal input:focus,
+.inline-field input:focus,
 .inline-field select:focus,
 .wide-field textarea:focus,
 .comment-input:focus {
@@ -693,9 +695,81 @@ h1 {
   padding: 8px 34px 8px 10px;
 }
 
+.search-panel,
+.search-condition-panel {
+  align-items: flex-end;
+  background: #f6f8fb;
+  border: 1px solid #dce4ee;
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  padding: 12px;
+}
+
+.search-condition-panel {
+  align-items: stretch;
+  flex: 1 1 520px;
+  flex-direction: column;
+}
+
+.search-condition-heading {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.search-condition-heading span,
+.search-panel-title {
+  color: #667789;
+  font-size: 13px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.search-condition-actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.search-condition-fields {
+  align-items: flex-end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.filter-field {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 132px;
+}
+
+.filter-field input,
+.filter-field select {
+  width: 100%;
+}
+
+.applicant-filter-field {
+  min-width: 180px;
+}
+
+.filter-reset-button {
+  align-self: flex-end;
+}
+
 .monthly-download-actions {
   align-items: center;
   justify-content: flex-end;
+}
+
+.filter-actions {
+  align-items: flex-end;
+  gap: 10px;
 }
 
 .muted-copy {
@@ -877,6 +951,16 @@ h1 {
   margin: 0;
 }
 
+.notification-body-copy {
+  max-width: 420px;
+}
+
+.status-stack {
+  align-items: flex-start;
+  display: grid;
+  gap: 6px;
+}
+
 .compact-definition {
   margin: 0;
 }
@@ -924,6 +1008,8 @@ h1 {
   align-items: center;
   border-bottom: 1px solid #e1e7ef;
   display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
   justify-content: space-between;
   padding: 14px 16px;
 }
@@ -1448,7 +1534,8 @@ th {
 }
 
 .calendar-modal label,
-.calendar-modal .checkbox-row {
+.calendar-modal .checkbox-row,
+.calendar-modal .calendar-date-field {
   color: #2c3847;
   display: grid;
   font-size: 14px;
@@ -1485,6 +1572,38 @@ th {
 .calendar-modal .checkbox-row input {
   min-height: auto;
   width: 18px;
+}
+
+.calendar-date-inputs {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) minmax(156px, 0.78fr);
+}
+
+.calendar-native-picker {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #c8d2dd;
+  border-radius: 6px;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: 18px minmax(0, 1fr);
+  padding: 0 8px;
+}
+
+.calendar-native-picker svg {
+  color: #4169b2;
+}
+
+.calendar-native-picker .calendar-native-date-input {
+  border: 0;
+  min-width: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.calendar-native-picker:has(input:disabled) {
+  background: #f6f8fb;
 }
 
 .full-span {
@@ -1571,6 +1690,19 @@ th {
     align-items: flex-start;
     flex-direction: column;
     gap: 12px;
+  }
+
+  .search-panel,
+  .search-condition-panel,
+  .search-condition-fields,
+  .filter-actions,
+  .monthly-download-actions {
+    width: 100%;
+  }
+
+  .filter-field,
+  .applicant-filter-field {
+    min-width: min(100%, 220px);
   }
 
   .toolbar-actions,

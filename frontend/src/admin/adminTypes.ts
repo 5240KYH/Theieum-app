@@ -6,16 +6,27 @@ export interface AdminApplication {
   applicantName: string;
   status: string;
   vendor: string;
+  applicationDate: string;
+  receiptDate: string;
+  amount: number | string;
 }
 
 export interface AdminNotificationEvent {
   id: number;
   recipientId: number;
+  recipientName?: string | null;
   applicationId: number | null;
+  applicationVendor?: string | null;
+  applicationStatus?: string | null;
   notificationType: string;
   channel: string;
   status: string;
   read: boolean;
+  title?: string | null;
+  body?: string | null;
+  createdAt?: string | null;
+  sentAt?: string | null;
+  failedReason?: string | null;
 }
 
 export interface AdminUserOrganizationMembership {

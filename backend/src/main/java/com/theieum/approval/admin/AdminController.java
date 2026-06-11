@@ -1,6 +1,8 @@
 package com.theieum.approval.admin;
 
 import java.io.ByteArrayOutputStream;
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.LinkedHashMap;
@@ -1198,7 +1200,10 @@ public class AdminController {
             Long applicantId,
             String applicantName,
             String status,
-            String vendor) {
+            String vendor,
+            LocalDate applicationDate,
+            LocalDate receiptDate,
+            BigDecimal amount) {
 
         static AdminApplicationResponse from(Application application) {
             return new AdminApplicationResponse(
@@ -1206,28 +1211,49 @@ public class AdminController {
                     application.getApplicant().getId(),
                     application.getApplicant().getName(),
                     application.getStatus().name(),
-                    application.getVendor());
+                    application.getVendor(),
+                    application.getApplicationDate(),
+                    application.getReceiptDate(),
+                    application.getAmount());
         }
     }
 
     public record AdminNotificationEventResponse(
             Long id,
             Long recipientId,
+            String recipientName,
             Long applicationId,
+            String applicationVendor,
+            String applicationStatus,
             String notificationType,
             String channel,
             String status,
-            boolean read) {
+            boolean read,
+            String title,
+            String body,
+            Instant createdAt,
+            Instant sentAt,
+            String failedReason) {
 
         static AdminNotificationEventResponse from(com.theieum.approval.notification.NotificationEvent event) {
+            Application application = event.getApplication();
+
             return new AdminNotificationEventResponse(
                     event.getId(),
                     event.getRecipient().getId(),
-                    event.getApplication() == null ? null : event.getApplication().getId(),
+                    event.getRecipient().getName(),
+                    application == null ? null : application.getId(),
+                    application == null ? null : application.getVendor(),
+                    application == null ? null : application.getStatus().name(),
                     event.getNotificationType().name(),
                     event.getChannel().name(),
                     event.getStatus().name(),
-                    event.isReadFlag());
+                    event.isReadFlag(),
+                    event.getTitle(),
+                    event.getBody(),
+                    event.getCreatedAt(),
+                    event.getSentAt(),
+                    event.getFailedReason());
         }
     }
 }

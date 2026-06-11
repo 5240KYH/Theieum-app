@@ -183,6 +183,19 @@ class ApiAuthorizationTest {
     }
 
     @Test
+    void managerCanReadApplicationDetailForAdminApplications() throws Exception {
+        long applicationId = submitApplication(3L, 1L);
+        createRoleTestUser("application-detail-manager", "MANAGER,APPLICANT");
+        String managerToken = login("application-detail-manager");
+
+        mockMvc.perform(get("/api/applications/{id}", applicationId)
+                        .header("Authorization", bearer(managerToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(applicationId))
+                .andExpect(jsonPath("$.receiptDate").value("2026-06-02"));
+    }
+
+    @Test
     void approverInboxShowsOnlyCurrentActionableSteps() throws Exception {
         long applicationId = submitApplication(9L, 1L);
         String firstApproverToken = login("approver01");

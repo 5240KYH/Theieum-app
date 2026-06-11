@@ -1,6 +1,6 @@
-import { Edit3, FileImage, RefreshCcw, Trash2, XCircle } from 'lucide-react';
+import { ArrowLeft, Edit3, FileImage, RefreshCcw, Trash2, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { useAuth } from '../auth/AuthContext';
 import { ApiError } from '../shared/api';
@@ -27,6 +27,7 @@ function errorMessage(error: unknown) {
 export function ApplicationDetailPage() {
   const auth = useAuth();
   const { id } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const [application, setApplication] = useState<ApplicationResponse | null>(null);
   const [isLoading, setLoading] = useState(true);
@@ -94,6 +95,9 @@ export function ApplicationDetailPage() {
     ? (application.status === 'DRAFT' || application.status === 'CANCELED')
       && (auth.hasRole('ADMIN') || application.applicant.id === auth.user?.id)
     : false;
+  const fromAdminApplications = new URLSearchParams(location.search).get('from') === 'admin-applications';
+  const listPath = fromAdminApplications ? '/admin/applications' : '/applications/my';
+  const listLabel = fromAdminApplications ? '전체 신청서로 돌아가기' : '내 신청서로 돌아가기';
 
   return (
     <section className="page-section" aria-labelledby="page-title">
@@ -103,6 +107,10 @@ export function ApplicationDetailPage() {
           <h1 id="page-title">신청서 상세</h1>
         </div>
         <div className="row-actions mobile-detail-actions">
+          <Link className="secondary-button" to={listPath}>
+            <ArrowLeft aria-hidden="true" size={16} />
+            {listLabel}
+          </Link>
           {application && canEditApplication(application.status) ? (
             <Link className="secondary-button" to={`/applications/${application.id}/edit`}>
               <Edit3 aria-hidden="true" size={16} />

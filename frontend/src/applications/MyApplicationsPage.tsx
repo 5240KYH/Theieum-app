@@ -3,9 +3,11 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { ApiError } from '../shared/api';
+import { SearchConditionPanel } from '../shared/SearchConditionPanel';
 import { getMyApplications } from './applicationApi';
 import { applicationStatusLabel, ApplicationResponse, currentApprover } from './applicationTypes';
 import { formatDate, formatDateTime, formatMoney, summarize } from './formatters';
+import { formatMonthInput, matchesReceiptMonthRange } from './monthFilters';
 
 function errorMessage(error: unknown) {
   if (error instanceof ApiError) {
@@ -17,8 +19,14 @@ function errorMessage(error: unknown) {
 
 export function MyApplicationsPage() {
   const [applications, setApplications] = useState<ApplicationResponse[]>([]);
+  const [receiptFromMonth, setReceiptFromMonth] = useState('');
+  const [receiptToMonth, setReceiptToMonth] = useState('');
   const [isLoading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const filteredApplications = applications.filter((application) => (
+    matchesReceiptMonthRange(application.receiptDate, receiptFromMonth, receiptToMonth)
+  ));
 
   async function loadApplications() {
     setLoading(true);
@@ -50,6 +58,42 @@ export function MyApplicationsPage() {
       <div className="table-panel">
         <div className="table-toolbar">
           <strong>신청 내역</strong>
+          <SearchConditionPanel>
+            <label className="inline-field filter-field">
+              영수증 월 From
+              <input
+                aria-label="영수증 월 From"
+                type="text"
+                inputMode="numeric"
+                maxLength={7}
+                placeholder="YYYY-MM"
+                value={receiptFromMonth}
+                onChange={(event) => setReceiptFromMonth(formatMonthInput(event.target.value))}
+              />
+            </label>
+            <label className="inline-field filter-field">
+              영수증 월 To
+              <input
+                aria-label="영수증 월 To"
+                type="text"
+                inputMode="numeric"
+                maxLength={7}
+                placeholder="YYYY-MM"
+                value={receiptToMonth}
+                onChange={(event) => setReceiptToMonth(formatMonthInput(event.target.value))}
+              />
+            </label>
+            <button
+              className="secondary-button filter-reset-button"
+              type="button"
+              onClick={() => {
+                setReceiptFromMonth('');
+                setReceiptToMonth('');
+              }}
+            >
+              전체기간
+            </button>
+          </SearchConditionPanel>
           <button className="secondary-button" type="button" onClick={loadApplications}>
             <RefreshCcw aria-hidden="true" size={16} />
             새로고침
@@ -78,8 +122,8 @@ export function MyApplicationsPage() {
                 <tr>
                   <td colSpan={9}>불러오는 중</td>
                 </tr>
-              ) : applications.length > 0 ? (
-                applications.map((application) => (
+              ) : filteredApplications.length > 0 ? (
+                filteredApplications.map((application) => (
                   <tr key={application.id}>
                     <td>{formatDate(application.applicationDate)}</td>
                     <td className="wrap-cell">{summarize(application.description)}</td>
@@ -98,7 +142,7 @@ export function MyApplicationsPage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={9}>신청 내역 없음</td>
+                  <td colSpan={9}>조회된 신청 내역이 없습니다.</td>
                 </tr>
               )}
             </tbody>

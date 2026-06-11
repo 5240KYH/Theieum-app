@@ -1,9 +1,13 @@
 import { ChangeEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { Download, ShieldCheck, Trash2, X } from 'lucide-react';
+import { Download, Eye, ShieldCheck, Trash2, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 import { useAuth } from '../auth/AuthContext';
 import { applicationStatusLabel, ApprovalStepResponse } from '../applications/applicationTypes';
+import { formatDate, formatMoney } from '../applications/formatters';
+import { formatMonthInput, matchesReceiptMonthRange } from '../applications/monthFilters';
 import { ApiError } from '../shared/api';
+import { SearchConditionPanel } from '../shared/SearchConditionPanel';
 import {
   adminApproveStep,
   downloadMonthlyReceiptAttachments,
@@ -40,6 +44,9 @@ export function AdminApplicationsPage() {
   const auth = useAuth();
   const [applications, setApplications] = useState<AdminApplication[]>([]);
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [receiptFromMonth, setReceiptFromMonth] = useState('');
+  const [receiptToMonth, setReceiptToMonth] = useState('');
+  const [applicantKeyword, setApplicantKeyword] = useState('');
   const [selectedApplication, setSelectedApplication] = useState<AdminApplication | null>(null);
   const [hardDeleteTarget, setHardDeleteTarget] = useState<AdminApplication | null>(null);
   const [pendingStep, setPendingStep] = useState<ApprovalStepResponse | null>(null);
@@ -62,12 +69,17 @@ export function AdminApplicationsPage() {
   }, [selectedApplication]);
 
   const filteredApplications = useMemo(() => {
-    if (statusFilter === 'ALL') {
-      return applications;
-    }
+    const normalizedApplicantKeyword = applicantKeyword.trim().toLocaleLowerCase('ko-KR');
 
-    return applications.filter((application) => application.status === statusFilter);
-  }, [applications, statusFilter]);
+    return applications.filter((application) => (
+      (statusFilter === 'ALL' || application.status === statusFilter)
+      && (
+        !normalizedApplicantKeyword
+        || application.applicantName.toLocaleLowerCase('ko-KR').includes(normalizedApplicantKeyword)
+      )
+      && matchesReceiptMonthRange(application.receiptDate, receiptFromMonth, receiptToMonth)
+    ));
+  }, [applicantKeyword, applications, receiptFromMonth, receiptToMonth, statusFilter]);
 
   useEffect(() => {
     let ignore = false;
@@ -242,23 +254,72 @@ export function AdminApplicationsPage() {
 
       <div className="table-panel">
         <div className="table-toolbar">
-          <label className="inline-field">
-            상태 필터
-            <select value={statusFilter} onChange={handleFilterChange}>
-              {statusOptions.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
+          <SearchConditionPanel>
+            <label className="inline-field filter-field">
+              상태
+              <select aria-label="상태 필터" value={statusFilter} onChange={handleFilterChange}>
+                {statusOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="inline-field filter-field">
+              영수증 월 From
+              <input
+                aria-label="영수증 월 From"
+                type="text"
+                inputMode="numeric"
+                maxLength={7}
+                placeholder="YYYY-MM"
+                value={receiptFromMonth}
+                onChange={(event) => setReceiptFromMonth(formatMonthInput(event.target.value))}
+              />
+            </label>
+            <label className="inline-field filter-field">
+              영수증 월 To
+              <input
+                aria-label="영수증 월 To"
+                type="text"
+                inputMode="numeric"
+                maxLength={7}
+                placeholder="YYYY-MM"
+                value={receiptToMonth}
+                onChange={(event) => setReceiptToMonth(formatMonthInput(event.target.value))}
+              />
+            </label>
+            <label className="inline-field filter-field applicant-filter-field">
+              신청자
+              <input
+                aria-label="신청자"
+                type="text"
+                placeholder="전체 신청자"
+                value={applicantKeyword}
+                onChange={(event) => setApplicantKeyword(event.target.value)}
+              />
+            </label>
+            <button
+              className="secondary-button filter-reset-button"
+              type="button"
+              onClick={() => {
+                setReceiptFromMonth('');
+                setReceiptToMonth('');
+              }}
+            >
+              전체기간
+            </button>
+          </SearchConditionPanel>
           {auth.hasRole('ADMIN') ? (
             <div className="row-actions monthly-download-actions">
-              <label className="inline-field">
+              <label className="inline-field filter-field">
                 첨부 다운로드 월
                 <input
                   aria-label="첨부 다운로드 월"
-                  type="month"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={7}
+                  placeholder="YYYY-MM"
                   value={downloadMonth}
-                  onChange={(event) => setDownloadMonth(event.target.value)}
+                  onChange={(event) => setDownloadMonth(formatMonthInput(event.target.value))}
                 />
               </label>
               <button
@@ -282,9 +343,13 @@ export function AdminApplicationsPage() {
             <thead>
               <tr>
                 <th>신청서 ID</th>
+                <th>신청일</th>
                 <th>신청자</th>
+                <th>영수증 일자</th>
                 <th>사용처</th>
+                <th>금액</th>
                 <th>상태</th>
+                <th>상세</th>
                 <th>관리자 예외</th>
                 <th>완전 삭제</th>
               </tr>
@@ -293,9 +358,21 @@ export function AdminApplicationsPage() {
               {filteredApplications.map((application) => (
                 <tr key={application.id}>
                   <td>#{application.id}</td>
+                  <td>{formatDate(application.applicationDate)}</td>
                   <td>{application.applicantName}</td>
+                  <td>{formatDate(application.receiptDate)}</td>
                   <td>{application.vendor}</td>
+                  <td>{formatMoney(application.amount)}</td>
                   <td>{applicationStatusLabel(application.status)}</td>
+                  <td>
+                    <Link
+                      className="icon-button"
+                      to={`/applications/${application.id}?from=admin-applications`}
+                      aria-label={`신청서 ${application.id} 상세`}
+                    >
+                      <Eye aria-hidden="true" size={16} />
+                    </Link>
+                  </td>
                   <td>
                     <button
                       className="secondary-button"
@@ -330,7 +407,7 @@ export function AdminApplicationsPage() {
               ))}
               {!isLoading && filteredApplications.length === 0 ? (
                 <tr>
-                  <td colSpan={6}>조회된 신청서가 없습니다.</td>
+                  <td colSpan={10}>조회된 신청서가 없습니다.</td>
                 </tr>
               ) : null}
             </tbody>

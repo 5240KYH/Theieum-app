@@ -250,6 +250,7 @@ public class ApplicationController {
             return false;
         }
         return hasRole(user, "ADMIN")
+                || hasRole(user, "MANAGER")
                 || application.getApplicant().getId().equals(user.id())
                 || approvalStepRepository.existsReadableByApplicationIdAndApproverId(application.getId(), user.id());
     }

@@ -69,12 +69,12 @@ describe('CalendarPage', () => {
     vi.stubGlobal('localStorage', storage);
     localStorage.setItem('accessToken', 'token');
     localStorage.setItem('authUser', JSON.stringify({
-      id: 3,
-      loginId: 'employee01',
-      name: '직원01',
-      roles: ['APPLICANT']
+      id: 21,
+      loginId: 'calendar-manager',
+      name: '캘린더 매니저',
+      roles: ['MANAGER', 'APPLICANT']
     }));
-    window.history.pushState({}, '', '/calendar');
+    window.history.pushState({}, '', '/admin/calendar');
   });
 
   afterEach(() => {
@@ -85,6 +85,13 @@ describe('CalendarPage', () => {
   });
 
   it('일반 사용자는 공용 일정을 조회하고 관리 버튼은 보지 못한다', async () => {
+    localStorage.setItem('authUser', JSON.stringify({
+      id: 3,
+      loginId: 'employee01',
+      name: '직원01',
+      roles: ['APPLICANT']
+    }));
+    window.history.pushState({}, '', '/dashboard');
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url === '/api/me') {
@@ -94,6 +101,12 @@ describe('CalendarPage', () => {
         });
       }
       if (url === '/api/notifications') {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      if (url === '/api/applications/my') {
         return new Response(JSON.stringify([]), {
           status: 200,
           headers: { 'Content-Type': 'application/json' }
@@ -110,7 +123,8 @@ describe('CalendarPage', () => {
 
     render(<App />);
 
-    expect(await screen.findByRole('heading', { name: '공용 캘린더' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '대시보드' })).toBeInTheDocument();
+    expect(screen.getByText('공용 캘린더')).toBeInTheDocument();
     expect((await screen.findAllByText('월간 마감')).length).toBeGreaterThan(0);
     expect(screen.queryByRole('button', { name: '일정 등록' })).not.toBeInTheDocument();
 
@@ -235,8 +249,8 @@ describe('CalendarPage', () => {
 
     render(<App />);
 
-    expect(await screen.findByText('2026-06-10 09:00~10:00')).toBeInTheDocument();
-    expect(await screen.findByText('2026-06-10 22:00 ~ 2026-06-11 08:30')).toBeInTheDocument();
+    expect((await screen.findAllByText('2026-06-10 09:00~10:00')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('2026-06-10 22:00 ~ 2026-06-11 08:30')).length).toBeGreaterThan(0);
   });
 
   it('매니저는 일정을 등록하고 목록을 갱신한다', async () => {
@@ -284,9 +298,14 @@ describe('CalendarPage', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: '일정 등록' }));
     await userEvent.type(screen.getByLabelText('제목'), '월간 마감');
-    fireEvent.change(screen.getByLabelText('시작일'), { target: { value: '2026-06-10' } });
+    expect(screen.getByLabelText('시작일 일자 직접 선택')).toHaveAttribute('type', 'date');
+    expect(screen.getByLabelText('종료일 일자 직접 선택')).toHaveAttribute('type', 'date');
+    await userEvent.clear(screen.getByLabelText('시작일'));
+    await userEvent.type(screen.getByLabelText('시작일'), '20260610');
+    expect(screen.getByLabelText('시작일')).toHaveValue('2026-06-10');
     fireEvent.change(screen.getByLabelText('시작 시간'), { target: { value: '13:30' } });
-    fireEvent.change(screen.getByLabelText('종료일'), { target: { value: '2026-06-10' } });
+    fireEvent.change(screen.getByLabelText('종료일 일자 직접 선택'), { target: { value: '2026-06-10' } });
+    expect(screen.getByLabelText('종료일')).toHaveValue('2026-06-10');
     fireEvent.change(screen.getByLabelText('종료 시간'), { target: { value: '15:45' } });
     await userEvent.click(screen.getByRole('button', { name: '저장' }));
 
@@ -301,5 +320,41 @@ describe('CalendarPage', () => {
       endAt: '2026-06-10T15:45:00+09:00',
       allDay: false
     }));
+  });
+
+  it('일반 사용자가 관리 캘린더 주소로 접근하면 대시보드로 돌아간다', async () => {
+    localStorage.setItem('authUser', JSON.stringify({
+      id: 3,
+      loginId: 'employee01',
+      name: '직원01',
+      roles: ['APPLICANT']
+    }));
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/me') {
+        return new Response(localStorage.getItem('authUser'), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      if (url === '/api/notifications') {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      if (url.startsWith('/api/calendar/events')) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      return new Response('', { status: 404 });
+    }));
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '대시보드' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/dashboard');
   });
 });

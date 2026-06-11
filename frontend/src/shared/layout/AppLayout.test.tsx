@@ -113,6 +113,7 @@ describe('AppLayout', () => {
 
     expect(await screen.findByRole('link', { name: /사용자 관리/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /조직 관리/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /캘린더/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /전체 신청서/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /알림 로그/ })).toBeInTheDocument();
   });
@@ -127,10 +128,10 @@ describe('AppLayout', () => {
 
     const mobileNav = await screen.findByRole('navigation', { name: '모바일 주요 메뉴' });
     expect(within(mobileNav).getByRole('link', { name: /대시보드/ })).toBeInTheDocument();
-    expect(within(mobileNav).getByRole('link', { name: /캘린더/ })).toBeInTheDocument();
     expect(within(mobileNav).getByRole('link', { name: /새 신청/ })).toBeInTheDocument();
     expect(within(mobileNav).getByRole('link', { name: /내 신청서/ })).toBeInTheDocument();
     expect(within(mobileNav).getByRole('link', { name: /결재함/ })).toBeInTheDocument();
+    expect(within(mobileNav).queryByRole('link', { name: /캘린더/ })).not.toBeInTheDocument();
     expect(within(mobileNav).getByRole('button', { name: '더보기 메뉴 열기' })).toBeInTheDocument();
   });
 
@@ -152,6 +153,7 @@ describe('AppLayout', () => {
 
     const morePanel = screen.getByRole('dialog', { name: '모바일 더보기 메뉴' });
     expect(morePanel).toBeInTheDocument();
+    expect(within(morePanel).getByRole('link', { name: /캘린더/ })).toBeInTheDocument();
     expect(within(morePanel).getByRole('link', { name: /사용자 관리/ })).toBeInTheDocument();
     expect(within(morePanel).getByRole('link', { name: /결재선 관리/ })).toBeInTheDocument();
   });

@@ -21,7 +21,7 @@ export function AppRoutes() {
         <Route element={<AppLayout />}>
           <Route index element={<Navigate replace to="/dashboard" />} />
           <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/calendar" element={<CalendarPage />} />
+          <Route path="/calendar" element={<Navigate replace to="/dashboard" />} />
           <Route element={<ProtectedRoute requiredRole="APPLICANT" />}>
             <Route path="/applications/new" element={<ApplicationForm />} />
             <Route path="/applications/:id/edit" element={<ApplicationForm />} />
@@ -39,6 +39,7 @@ export function AppRoutes() {
             <Route path="/admin/positions" element={<AdminReferencePage kind="positions" />} />
             <Route path="/admin/approval-lines" element={<AdminReferencePage kind="approvalLines" />} />
             <Route path="/admin/approval-org-exceptions" element={<AdminReferencePage kind="approvalOrgExceptions" />} />
+            <Route path="/admin/calendar" element={<CalendarPage />} />
             <Route path="/admin/applications" element={<AdminApplicationsPage />} />
             <Route path="/admin/notifications" element={<AdminNotificationsPage />} />
           </Route>

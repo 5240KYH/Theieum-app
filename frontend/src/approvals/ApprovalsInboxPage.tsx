@@ -4,7 +4,9 @@ import { Link } from 'react-router-dom';
 
 import { applicationStatusLabel } from '../applications/applicationTypes';
 import { formatDate, formatDateTime, formatMoney } from '../applications/formatters';
+import { formatMonthInput, matchesMonthRange } from '../applications/monthFilters';
 import { ApiError } from '../shared/api';
+import { SearchConditionPanel } from '../shared/SearchConditionPanel';
 import { approveStep, getApprovalInbox, rejectStep } from './approvalApi';
 import { ApprovalInboxItem } from './approvalTypes';
 
@@ -30,17 +32,24 @@ function attachmentLabel(value: boolean | null | undefined) {
 
 export function ApprovalsInboxPage() {
   const [items, setItems] = useState<ApprovalInboxItem[]>([]);
+  const [receivedFromMonth, setReceivedFromMonth] = useState('');
+  const [receivedToMonth, setReceivedToMonth] = useState('');
   const [comments, setComments] = useState<Record<number, string>>({});
   const [isLoading, setLoading] = useState(true);
   const [processingStepId, setProcessingStepId] = useState<number | null>(null);
   const [error, setError] = useState('');
+
+  const filteredItems = items.filter((item) => (
+    matchesMonthRange(item.receivedAt, receivedFromMonth, receivedToMonth)
+  ));
 
   async function loadInbox() {
     setLoading(true);
     setError('');
 
     try {
-      setItems(await getApprovalInbox());
+      const data = await getApprovalInbox();
+      setItems(Array.isArray(data) ? data : []);
     } catch (requestError) {
       setError(errorMessage(requestError));
     } finally {
@@ -104,10 +113,46 @@ export function ApprovalsInboxPage() {
       <div className="table-panel">
         <div className="table-toolbar">
           <strong>결재 대기 목록</strong>
+          <SearchConditionPanel>
+            <label className="inline-field filter-field">
+              접수기간 From
+              <input
+                aria-label="접수기간 From"
+                type="text"
+                inputMode="numeric"
+                maxLength={7}
+                placeholder="YYYY-MM"
+                value={receivedFromMonth}
+                onChange={(event) => setReceivedFromMonth(formatMonthInput(event.target.value))}
+              />
+            </label>
+            <label className="inline-field filter-field">
+              접수기간 To
+              <input
+                aria-label="접수기간 To"
+                type="text"
+                inputMode="numeric"
+                maxLength={7}
+                placeholder="YYYY-MM"
+                value={receivedToMonth}
+                onChange={(event) => setReceivedToMonth(formatMonthInput(event.target.value))}
+              />
+            </label>
+            <button
+              className="secondary-button filter-reset-button"
+              type="button"
+              onClick={() => {
+                setReceivedFromMonth('');
+                setReceivedToMonth('');
+              }}
+            >
+              전체기간
+            </button>
+          </SearchConditionPanel>
         </div>
-        {!isLoading && items.length > 0 ? (
+        {!isLoading && filteredItems.length > 0 ? (
           <section className="mobile-card-list approval-inbox-cards" aria-label="모바일 결재 카드 목록">
-            {items.map((item) => (
+            {filteredItems.map((item) => (
               <article className="mobile-card approval-inbox-card" key={item.stepId}>
                 <div className="mobile-card-title">
                   <strong>{item.vendor}</strong>
@@ -196,8 +241,8 @@ export function ApprovalsInboxPage() {
                 <tr>
                   <td colSpan={10}>불러오는 중</td>
                 </tr>
-              ) : items.length > 0 ? (
-                items.map((item) => (
+              ) : filteredItems.length > 0 ? (
+                filteredItems.map((item) => (
                   <tr key={item.stepId}>
                     <td>{item.receivedAt ? formatDateTime(item.receivedAt) : '-'}</td>
                     <td>{item.applicantName}</td>

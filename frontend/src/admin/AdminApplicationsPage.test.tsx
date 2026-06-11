@@ -34,30 +34,41 @@ const adminApplications = [
   {
     id: 10,
     applicantId: 3,
-    applicantName: '직원01',
+    applicantName: '김민수',
     status: 'IN_APPROVAL',
-    vendor: '문구점'
+    vendor: '문구점',
+    applicationDate: '2026-06-03',
+    receiptDate: '2026-06-02',
+    amount: 12000
   },
   {
     id: 11,
     applicantId: 5,
-    applicantName: '직원03',
+    applicantName: '김서연',
     status: 'APPROVED',
-    vendor: '카페'
+    vendor: '카페',
+    applicationDate: '2026-07-05',
+    receiptDate: '2026-07-04',
+    amount: 8000
   },
   {
     id: 12,
     applicantId: 6,
-    applicantName: '직원04',
+    applicantName: '박지훈',
     status: 'DRAFT',
-    vendor: '택시'
+    vendor: '택시',
+    applicationDate: '2026-06-20',
+    receiptDate: '2026-06-20',
+    amount: 30000
   }
 ];
 
 const applicationDetail = {
   id: 10,
-  applicant: { id: 3, name: '직원01' },
+  applicant: { id: 3, name: '김민수' },
   approvalTypeId: 1,
+  approvalOrganizationId: 3,
+  approvalOrganizationName: '개발팀',
   applicationDate: '2026-06-03',
   receiptDate: '2026-06-02',
   vendor: '문구점',
@@ -127,6 +138,92 @@ describe('AdminApplicationsPage', () => {
 
     expect(screen.getByText('문구점')).toBeInTheDocument();
     expect(screen.queryByText('카페')).not.toBeInTheDocument();
+  });
+
+  it('전체 신청서를 영수증 월 범위와 신청자별로 필터링한다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === '/api/admin/applications') {
+          return new Response(JSON.stringify(adminApplications), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
+        return new Response(null, { status: 404 });
+      })
+    );
+
+    render(<App />);
+
+    const searchRegion = await screen.findByRole('region', { name: '검색조건' });
+    expect(searchRegion).toHaveClass('search-condition-panel');
+    expect(searchRegion).toHaveTextContent('검색조건');
+    expect(await screen.findByText('문구점')).toBeInTheDocument();
+    expect(screen.getByText('카페')).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText('영수증 월 From'), '20260699');
+    await userEvent.type(screen.getByLabelText('영수증 월 To'), '202606');
+
+    expect(screen.getByLabelText('영수증 월 From')).toHaveValue('2026-06');
+    expect(screen.getByLabelText('영수증 월 To')).toHaveValue('2026-06');
+
+    expect(screen.getByText('문구점')).toBeInTheDocument();
+    expect(screen.queryByText('카페')).not.toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText('신청자'), '김');
+
+    expect(screen.getByText('문구점')).toBeInTheDocument();
+    expect(screen.queryByText('카페')).not.toBeInTheDocument();
+    expect(screen.queryByText('택시')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: '전체기간' }));
+
+    expect(screen.getByText('문구점')).toBeInTheDocument();
+    expect(screen.getByText('카페')).toBeInTheDocument();
+    expect(screen.queryByText('택시')).not.toBeInTheDocument();
+
+    await userEvent.clear(screen.getByLabelText('신청자'));
+
+    expect(screen.getByText('택시')).toBeInTheDocument();
+  });
+
+  it('전체 신청서에서 상세 정보를 확인한 뒤 목록으로 돌아갈 수 있다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url === '/api/admin/applications') {
+          return new Response(JSON.stringify(adminApplications), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
+        if (url === '/api/applications/10') {
+          return new Response(JSON.stringify({ ...applicationDetail, attachments: [] }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
+        return new Response(null, { status: 404 });
+      })
+    );
+
+    render(<App />);
+
+    const row = await screen.findByRole('row', { name: /문구점/ });
+    await userEvent.click(within(row).getByRole('link', { name: '신청서 10 상세' }));
+
+    expect(await screen.findByRole('heading', { name: '신청서 상세' })).toBeInTheDocument();
+    expect(await screen.findByText('회의 준비 문구류')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('link', { name: '전체 신청서로 돌아가기' }));
+
+    expect(window.location.pathname).toBe('/admin/applications');
   });
 
   it('관리자 예외 결재 사유를 입력해야 처리된다', async () => {
@@ -271,7 +368,7 @@ describe('AdminApplicationsPage', () => {
     expect(revokeObjectUrl).toHaveBeenCalledWith('blob:monthly-attachments');
   });
 
-  it('알림 로그에서 채널과 발송 상태를 표시한다', async () => {
+  it('알림 로그에서 수신자 이름과 신청서, 알림 상태를 직관적으로 분리해 표시한다', async () => {
     window.history.pushState({}, '', '/admin/notifications');
     vi.stubGlobal(
       'fetch',
@@ -281,11 +378,36 @@ describe('AdminApplicationsPage', () => {
             {
               id: 901,
               recipientId: 3,
+              recipientName: '김민수',
               applicationId: 10,
+              applicationVendor: '문구점',
+              applicationStatus: 'IN_APPROVAL',
               notificationType: 'APPROVAL_REQUESTED',
               channel: 'IN_APP',
               status: 'SENT',
-              read: false
+              read: false,
+              title: '결재 요청',
+              body: '문구점 영수증 결재가 요청되었습니다.',
+              createdAt: '2026-06-03T01:05:00Z',
+              sentAt: '2026-06-03T01:06:00Z',
+              failedReason: null
+            },
+            {
+              id: 902,
+              recipientId: 4,
+              recipientName: '박서연',
+              applicationId: 11,
+              applicationVendor: '택시',
+              applicationStatus: 'APPROVED',
+              notificationType: 'APPLICATION_APPROVED',
+              channel: 'IN_APP',
+              status: 'CREATED',
+              read: true,
+              title: '최종 결재 완료',
+              body: '택시 영수증 신청서가 승인되었습니다.',
+              createdAt: '2026-06-03T02:05:00Z',
+              sentAt: null,
+              failedReason: null
             }
           ]), {
             status: 200,
@@ -300,8 +422,21 @@ describe('AdminApplicationsPage', () => {
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: '알림 로그 관리' })).toBeInTheDocument();
-    expect(await screen.findByText('인앱')).toBeInTheDocument();
+    expect(await screen.findByText('결재 요청')).toBeInTheDocument();
+    expect(screen.getByText('문구점 영수증 결재가 요청되었습니다.')).toBeInTheDocument();
+    expect(screen.getByText('김민수')).toBeInTheDocument();
+    expect(screen.queryByText('사용자 #3')).not.toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: '사용처' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: '신청상태' })).toBeInTheDocument();
+    expect(screen.getByText('문구점')).toBeInTheDocument();
+    expect(screen.getByText('결재중')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: '발송상태' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: '채널' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: '읽음' })).toBeInTheDocument();
+    expect((await screen.findAllByText('인앱')).length).toBeGreaterThan(0);
     expect(screen.getByText('발송완료')).toBeInTheDocument();
+    expect(screen.getByText('발송 전')).toBeInTheDocument();
+    expect(screen.getByText('미확인')).toBeInTheDocument();
   });
 
   it('조직별 예외 결재자 목록을 표시한다', async () => {
