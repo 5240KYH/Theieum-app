@@ -40,6 +40,14 @@ PR 후속 작업 전에는 현재 브랜치와 원격 PR 상태를 먼저 확인
 - 주의점은 backend 통합 테스트가 동일 `postgres-test` DB를 `clean()/migrate()`하므로, 여러 에이전트가 동시에 backend SpringBootTest를 실행하면 테스트 DB 경합이 날 수 있다는 점이다.
 - 병렬 작업 중 backend 통합 테스트는 Coordinator가 단독 실행하거나, 에이전트별 테스트 DB 격리를 마련한 뒤 병렬화하는 편이 안전하다.
 
+## Git 최종화 운영 메모
+
+- 이번 최종화에서는 PR 요청을 별도 브랜치가 필요한 요청으로 해석해 `codex/task-28-ui-security-improvements` 브랜치를 만들었다.
+- 사용자 후속 요청에 따라, 앞으로 이 저장소에서 `commit`, `push`, `pr`을 함께 요청하더라도 별도 브랜치 생성을 명시하지 않았다면 새 브랜치를 만들지 않는다.
+- 기본 흐름은 `main` 브랜치 상태에서 검증 후 commit/push를 진행한다.
+- GitHub PR은 일반적으로 비교용 head branch가 필요하므로, PR까지 꼭 필요한 상황에서는 `main` 직행 push와 PR 생성 중 어떤 흐름을 원하는지 먼저 확인한다.
+- 사용자가 `main`에서 진행하라고 한 경우에는 PR 생성을 위해 임의로 `codex/*` 브랜치를 만들지 않는다.
+
 ## 주요 변경 파일
 
 - `backend/src/main/java/com/theieum/approval/auth/RoleAccess.java`
@@ -100,3 +108,4 @@ git diff --check
 - 병렬 에이전트 운영을 계속 사용할 경우 backend 통합 테스트용 DB 격리 전략을 별도 Task로 분리하는 것을 권장한다.
 - 최종화 요청에 따라 `codex/task-28-ui-security-improvements` 브랜치에서 커밋/푸시/PR 생성을 진행한다.
 - 현재 실행 환경에는 `gh` CLI가 없어 PR 생성은 GitHub connector 또는 GitHub 웹 compare URL 경로가 필요할 수 있다.
+- 후속 요청으로, 이후 최종화는 사용자가 별도 브랜치를 명시하지 않는 한 `main` 브랜치 상태에서 진행해야 한다.
