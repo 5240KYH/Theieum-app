@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { App } from '../app/App';
@@ -145,6 +145,41 @@ describe('ApplicationForm', () => {
     expect(fetch).not.toHaveBeenCalledWith('/api/applications', expect.objectContaining({
       method: 'POST'
     }));
+  });
+
+  it('필수 항목별 제출 차단 사유를 보여준다', async () => {
+    vi.stubGlobal('fetch', mockDefaultApprovalFetch());
+
+    render(<App />);
+
+    await userEvent.click(screen.getByRole('button', { name: '제출' }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('필수 항목을 입력하면 제출할 수 있습니다.');
+    expect(screen.getByText('영수증 일자를 입력해주세요.')).toBeInTheDocument();
+    expect(screen.getByText('사용처를 입력해주세요.')).toBeInTheDocument();
+    expect(screen.getByText('금액을 입력해주세요.')).toBeInTheDocument();
+    expect(screen.getByText('신청 내용을 입력해주세요.')).toBeInTheDocument();
+    expect(screen.getByText('영수증 이미지를 1개 이상 첨부해주세요.')).toBeInTheDocument();
+  });
+
+  it('신청일자와 0원 금액 오류는 제출 확인 전에 보여준다', async () => {
+    const file = new File(['receipt'], 'receipt.png', { type: 'image/png' });
+    vi.stubGlobal('fetch', mockDefaultApprovalFetch());
+
+    render(<App />);
+
+    await userEvent.clear(screen.getByLabelText('신청일자'));
+    await userEvent.type(await screen.findByLabelText('영수증 일자'), '20260602');
+    await userEvent.type(screen.getByLabelText('사용처'), '문구점');
+    await userEvent.type(screen.getByLabelText('금액'), '0');
+    await userEvent.type(screen.getByLabelText('신청 내용'), '회의 준비 문구류 구입');
+    await userEvent.upload(screen.getByLabelText('영수증 이미지 첨부'), file);
+    await userEvent.click(screen.getByRole('button', { name: '제출' }));
+
+    expect(screen.queryByRole('dialog', { name: '신청서 제출 확인' })).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('필수 항목을 입력하면 제출할 수 있습니다.');
+    expect(screen.getByText('신청일자를 입력해주세요.')).toBeInTheDocument();
+    expect(screen.getByText('금액은 0보다 큰 숫자로 입력해주세요.')).toBeInTheDocument();
   });
 
   it('신청 전에 예상 결재선을 표시한다', async () => {
@@ -386,6 +421,9 @@ describe('ApplicationForm', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '제출' }));
 
+    const dialog = await screen.findByRole('dialog', { name: '신청서 제출 확인' });
+    await userEvent.click(within(dialog).getByRole('button', { name: '제출 확정' }));
+
     await waitFor(() => {
       expect(window.location.pathname).toBe('/applications/100');
     });
@@ -395,6 +433,61 @@ describe('ApplicationForm', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/applications/100/submit', expect.objectContaining({
       method: 'POST'
     }));
+  });
+
+  it('제출 전 요약을 확인한 뒤 신청서를 제출한다', async () => {
+    const file = new File(['receipt'], 'receipt.png', { type: 'image/png' });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url === '/api/applications/approval-organizations') {
+        return jsonResponse(approvalOrganizations);
+      }
+
+      if (url === '/api/applications/approval-preview?approvalTypeId=1&approvalOrganizationId=3') {
+        return jsonResponse([]);
+      }
+
+      if (url === '/api/applications' && init?.method === 'POST') {
+        return jsonResponse(draftResponse);
+      }
+
+      if (url === '/api/applications/100/attachments' && init?.method === 'POST') {
+        return jsonResponse({ id: 501, originalFilename: 'receipt.png', mimeType: 'image/png', fileSize: 7 });
+      }
+
+      if (url === '/api/applications/100/submit' && init?.method === 'POST') {
+        return jsonResponse(submittedResponse);
+      }
+
+      if (url === '/api/applications/100') {
+        return jsonResponse(submittedResponse);
+      }
+
+      return jsonResponse([]);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    await userEvent.type(await screen.findByLabelText('영수증 일자'), '20260602');
+    await userEvent.type(screen.getByLabelText('사용처'), '문구점');
+    await userEvent.type(screen.getByLabelText('금액'), '12000');
+    await userEvent.type(screen.getByLabelText('신청 내용'), '회의 준비 문구류 구입');
+    await userEvent.upload(screen.getByLabelText('영수증 이미지 첨부'), file);
+    await userEvent.click(screen.getByRole('button', { name: '제출' }));
+
+    const dialog = await screen.findByRole('dialog', { name: '신청서 제출 확인' });
+    expect(dialog).toHaveTextContent('문구점');
+    expect(dialog).toHaveTextContent('12,000원');
+
+    await userEvent.click(within(dialog).getByRole('button', { name: '제출 확정' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith('/api/applications/100/submit', expect.objectContaining({
+        method: 'POST'
+      }));
+    });
   });
 
   it('임시저장 후 내용을 수정해 제출하면 같은 신청서를 갱신해 제출한다', async () => {
@@ -503,6 +596,8 @@ describe('ApplicationForm', () => {
     await userEvent.clear(screen.getByLabelText('신청 내용'));
     await userEvent.type(screen.getByLabelText('신청 내용'), '수정된 회의 다과');
     await userEvent.click(screen.getByRole('button', { name: '제출' }));
+    const dialog = await screen.findByRole('dialog', { name: '신청서 제출 확인' });
+    await userEvent.click(within(dialog).getByRole('button', { name: '제출 확정' }));
 
     await waitFor(() => {
       expect(window.location.pathname).toBe('/applications/100');

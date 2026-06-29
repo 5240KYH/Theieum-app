@@ -623,6 +623,8 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
   const [hardDeleteError, setHardDeleteError] = useState('');
   const [isHardDeleting, setHardDeleting] = useState(false);
   const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [hardDeleteConfirmText, setHardDeleteConfirmText] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -757,6 +759,8 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
     setHardDeleteTarget(null);
     setHardDeleteError('');
     setPassword('');
+    setPasswordConfirm('');
+    setHardDeleteConfirmText('');
     setMessage('');
     void load(config, kind, () => !ignore);
     void loadSelectOptions(kind, () => !ignore);
@@ -832,6 +836,7 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
   function openHardDelete(item: ReferenceItem) {
     setHardDeleteTarget(item);
     setHardDeleteError('');
+    setHardDeleteConfirmText('');
     setMessage('');
     setError('');
   }
@@ -842,6 +847,7 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
     }
     setHardDeleteTarget(null);
     setHardDeleteError('');
+    setHardDeleteConfirmText('');
   }
 
   async function handleHardDelete() {
@@ -857,6 +863,7 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
     try {
       await config.hardRemove(itemId(hardDeleteTarget));
       setHardDeleteTarget(null);
+      setHardDeleteConfirmText('');
       setMessage('완전 삭제되었습니다.');
       await load();
     } catch (requestError) {
@@ -874,10 +881,16 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
     setError('');
     setMessage('');
 
+    if (password !== passwordConfirm) {
+      setError('새 비밀번호와 확인 값이 일치하지 않습니다.');
+      return;
+    }
+
     try {
       await updateAdminUserPassword(passwordTarget.id, password);
       setPasswordTarget(null);
       setPassword('');
+      setPasswordConfirm('');
       setMessage('비밀번호가 변경되었습니다.');
     } catch (requestError) {
       setError(errorMessage(requestError));
@@ -966,6 +979,7 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
                         value={String(draft.roles ?? '')}
                         onChange={(role, checked) => updateDraftValue('roles', updateRoleValue(draft.roles, role, checked))}
                       />
+                      <p className="muted-copy">변경 후 역할: {selectedRoles(draft.roles).join(',') || '없음'}</p>
                     </div>
                   );
                 }
@@ -1092,7 +1106,7 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
         </form>
       ) : null}
 
-      {error ? <p className="form-error" role="alert">{error}</p> : null}
+      {error && !passwordTarget ? <p className="form-error" role="alert">{error}</p> : null}
       {message ? <p className="form-success" role="status">{message}</p> : null}
 
       <div className="table-panel admin-mobile-table-shell">
@@ -1117,7 +1131,17 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
                           수정
                         </button>
                         {kind === 'users' && isAdmin ? (
-                          <button className="secondary-button" type="button" onClick={() => setPasswordTarget(item as AdminUser)}>
+                          <button
+                            className="secondary-button"
+                            type="button"
+                            onClick={() => {
+                              setPasswordTarget(item as AdminUser);
+                              setPassword('');
+                              setPasswordConfirm('');
+                              setError('');
+                              setMessage('');
+                            }}
+                          >
                             <KeyRound aria-hidden="true" size={16} />
                             비밀번호 변경
                           </button>
@@ -1154,7 +1178,17 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
           <form className="preview-modal compact-modal form-panel" onSubmit={handlePasswordSubmit}>
             <div className="table-toolbar borderless-panel">
               <strong id="admin-password-title">{passwordTarget.name} 비밀번호 변경</strong>
-              <button className="icon-button" type="button" aria-label="닫기" onClick={() => setPasswordTarget(null)}>×</button>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="닫기"
+                onClick={() => {
+                  setPasswordTarget(null);
+                  setPassword('');
+                  setPasswordConfirm('');
+                  setError('');
+                }}
+              >×</button>
             </div>
             <label>
               새 비밀번호
@@ -1164,8 +1198,26 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
                 onChange={(event) => setPassword(event.target.value)}
               />
             </label>
+            <label>
+              새 비밀번호 확인
+              <input
+                type="password"
+                value={passwordConfirm}
+                onChange={(event) => setPasswordConfirm(event.target.value)}
+              />
+            </label>
+            {error ? <p className="form-error" role="alert">{error}</p> : null}
             <div className="form-actions">
-              <button className="secondary-button" type="button" onClick={() => setPasswordTarget(null)}>취소</button>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => {
+                  setPasswordTarget(null);
+                  setPassword('');
+                  setPasswordConfirm('');
+                  setError('');
+                }}
+              >취소</button>
               <button className="primary-button" type="submit">변경 저장</button>
             </div>
           </form>
@@ -1193,10 +1245,23 @@ export function AdminReferencePage({ kind }: AdminReferencePageProps) {
                   <dd>{itemDisplayName(kind, hardDeleteTarget)}</dd>
                 </div>
               </dl>
+              <label>
+                삭제 확인 문구
+                <input
+                  type="text"
+                  value={hardDeleteConfirmText}
+                  onChange={(event) => setHardDeleteConfirmText(event.target.value)}
+                />
+              </label>
               {hardDeleteError ? <p className="form-error" role="alert">{hardDeleteError}</p> : null}
               <div className="form-actions">
                 <button className="secondary-button" type="button" onClick={closeHardDelete} disabled={isHardDeleting}>취소</button>
-                <button className="primary-button hard-delete-confirm-button" type="button" disabled={isHardDeleting} onClick={() => void handleHardDelete()}>
+                <button
+                  className="primary-button hard-delete-confirm-button"
+                  type="button"
+                  disabled={isHardDeleting || hardDeleteConfirmText.trim() !== itemDisplayName(kind, hardDeleteTarget)}
+                  onClick={() => void handleHardDelete()}
+                >
                   완전 삭제
                 </button>
               </div>

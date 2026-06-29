@@ -21,6 +21,7 @@ import com.theieum.approval.attachment.Attachment;
 import com.theieum.approval.attachment.AttachmentRepository;
 import com.theieum.approval.attachment.FileStorage;
 import com.theieum.approval.attachment.StoredFile;
+import com.theieum.approval.auth.RoleAccess;
 import com.theieum.approval.common.ForbiddenOperationException;
 import com.theieum.approval.common.ResourceNotFoundException;
 import com.theieum.approval.common.WorkflowConflictException;
@@ -359,9 +360,7 @@ public class ApplicationService {
     }
 
     private boolean hasManagementRole(User user) {
-        return user.getRoleList().stream()
-                .map(role -> role.trim().toUpperCase())
-                .anyMatch(role -> role.equals("ADMIN") || role.equals("MANAGER") || role.equals("MANGER"));
+        return user != null && RoleAccess.hasAnyRole(user.getRoleList(), "ADMIN", "MANAGER");
     }
 
     private Application findApplication(long applicationId) {

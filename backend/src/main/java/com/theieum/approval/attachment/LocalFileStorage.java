@@ -2,6 +2,7 @@ package com.theieum.approval.attachment;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.UUID;
@@ -17,7 +18,7 @@ public class LocalFileStorage implements FileStorage {
     private final Path storageDirectory;
 
     public LocalFileStorage(@Value("${app.file-storage.root-path}") Path storageDirectory) {
-        this.storageDirectory = storageDirectory;
+        this.storageDirectory = storageDirectory.toAbsolutePath().normalize();
     }
 
     @Override
@@ -40,8 +41,9 @@ public class LocalFileStorage implements FileStorage {
 
     @Override
     public byte[] read(String path) {
+        Path resolvedPath = resolveReadablePath(path);
         try {
-            return Files.readAllBytes(Path.of(path));
+            return Files.readAllBytes(resolvedPath);
         } catch (IOException ex) {
             throw new FileStorageException("Unable to read attachment", ex);
         }
@@ -49,10 +51,46 @@ public class LocalFileStorage implements FileStorage {
 
     @Override
     public void deleteIfExists(String path) {
+        Path resolvedPath = resolveDeletablePath(path);
         try {
-            Files.deleteIfExists(Path.of(path));
+            Files.deleteIfExists(resolvedPath);
         } catch (IOException ex) {
             throw new FileStorageException("Unable to delete attachment", ex);
+        }
+    }
+
+    private Path resolveInsideStorageRoot(String path) {
+        Path resolvedPath = Path.of(path).toAbsolutePath().normalize();
+        if (!resolvedPath.startsWith(storageDirectory)) {
+            throw new FileStorageException("Attachment path is outside configured storage root", null);
+        }
+        return resolvedPath;
+    }
+
+    private Path resolveReadablePath(String path) {
+        Path resolvedPath = resolveInsideStorageRoot(path);
+        return requireRealPathInsideStorageRoot(resolvedPath);
+    }
+
+    private Path resolveDeletablePath(String path) {
+        Path resolvedPath = resolveInsideStorageRoot(path);
+        if (!Files.exists(resolvedPath, LinkOption.NOFOLLOW_LINKS)) {
+            return resolvedPath;
+        }
+        requireRealPathInsideStorageRoot(resolvedPath);
+        return resolvedPath;
+    }
+
+    private Path requireRealPathInsideStorageRoot(Path resolvedPath) {
+        try {
+            Path storageRoot = storageDirectory.toRealPath();
+            Path realPath = resolvedPath.toRealPath();
+            if (!realPath.startsWith(storageRoot)) {
+                throw new FileStorageException("Attachment path is outside configured storage root", null);
+            }
+            return realPath;
+        } catch (IOException ex) {
+            throw new FileStorageException("Unable to resolve attachment path", ex);
         }
     }
 

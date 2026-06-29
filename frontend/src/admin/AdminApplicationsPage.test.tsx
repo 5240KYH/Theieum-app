@@ -226,6 +226,50 @@ describe('AdminApplicationsPage', () => {
     expect(window.location.pathname).toBe('/admin/applications');
   });
 
+  it('매니저는 전체 신청서에서 상세 화면으로 이동할 수 있다', async () => {
+    localStorage.setItem('accessToken', 'manager-token');
+    localStorage.setItem('authUser', JSON.stringify({
+      id: 20,
+      loginId: 'manager01',
+      name: '매니저',
+      roles: ['MANAGER']
+    }));
+    window.history.pushState({}, '', '/admin/applications');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url === '/api/admin/applications') {
+          return new Response(JSON.stringify(adminApplications), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
+        if (url === '/api/applications/10') {
+          return new Response(JSON.stringify({ ...applicationDetail, attachments: [] }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      })
+    );
+
+    render(<App />);
+
+    const row = await screen.findByRole('row', { name: /문구점/ });
+    await userEvent.click(within(row).getByRole('link', { name: '신청서 10 상세' }));
+
+    expect(await screen.findByRole('heading', { name: '신청서 상세' })).toBeInTheDocument();
+    expect(await screen.findByText('회의 준비 문구류')).toBeInTheDocument();
+  });
+
   it('관리자 예외 결재 사유를 입력해야 처리된다', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -356,6 +400,14 @@ describe('AdminApplicationsPage', () => {
     await userEvent.clear(screen.getByLabelText('첨부 다운로드 월'));
     await userEvent.type(screen.getByLabelText('첨부 다운로드 월'), '2026-06');
     await userEvent.click(screen.getByRole('button', { name: '월별 첨부 다운로드' }));
+
+    const dialog = screen.getByRole('dialog', { name: '월별 첨부 다운로드 확인' });
+    expect(dialog).toHaveTextContent('민감한 영수증 이미지');
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      '/api/admin/attachments/monthly-download?month=2026-06',
+      expect.anything()
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: '다운로드 시작' }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(

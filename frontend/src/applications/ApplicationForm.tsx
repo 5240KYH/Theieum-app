@@ -108,6 +108,46 @@ function fileKey(file: File) {
   return `${file.name}:${file.size}:${file.lastModified}`;
 }
 
+function validationIssues(params: {
+  applicationDate: string;
+  receiptDate: string;
+  vendor: string;
+  amount: string;
+  description: string;
+  receiptFilesLength: number;
+  existingAttachmentCount: number;
+}) {
+  const issues: string[] = [];
+
+  if (!toIsoDate(params.applicationDate)) {
+    issues.push('신청일자를 입력해주세요.');
+  }
+
+  if (!toIsoDate(params.receiptDate)) {
+    issues.push('영수증 일자를 입력해주세요.');
+  }
+
+  if (!params.vendor.trim()) {
+    issues.push('사용처를 입력해주세요.');
+  }
+
+  if (!params.amount) {
+    issues.push('금액을 입력해주세요.');
+  } else if (Number(params.amount) <= 0 || Number.isNaN(Number(params.amount))) {
+    issues.push('금액은 0보다 큰 숫자로 입력해주세요.');
+  }
+
+  if (!params.description.trim()) {
+    issues.push('신청 내용을 입력해주세요.');
+  }
+
+  if (params.receiptFilesLength + params.existingAttachmentCount < 1) {
+    issues.push('영수증 이미지를 1개 이상 첨부해주세요.');
+  }
+
+  return issues;
+}
+
 export function ApplicationForm() {
   const auth = useAuth();
   const navigate = useNavigate();
@@ -130,6 +170,8 @@ export function ApplicationForm() {
   const [approvalPreviewError, setApprovalPreviewError] = useState('');
   const [previewFileIndex, setPreviewFileIndex] = useState<number | null>(null);
   const [isSaving, setSaving] = useState(false);
+  const [submitIssues, setSubmitIssues] = useState<string[]>([]);
+  const [pendingSubmit, setPendingSubmit] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const previewButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -145,6 +187,16 @@ export function ApplicationForm() {
       && (receiptFiles.length > 0 || existingAttachmentCount > 0)
     );
   }, [amount, applicationDate, description, existingAttachmentCount, receiptDate, receiptFiles.length, vendor]);
+
+  const currentSubmitIssues = useMemo(() => validationIssues({
+    applicationDate,
+    receiptDate,
+    vendor,
+    amount,
+    description,
+    receiptFilesLength: receiptFiles.length,
+    existingAttachmentCount
+  }), [amount, applicationDate, description, existingAttachmentCount, receiptDate, receiptFiles.length, vendor]);
 
   useEffect(() => {
     let ignore = false;
@@ -421,16 +473,16 @@ export function ApplicationForm() {
     }
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
+  async function confirmSubmitApplication() {
     if (!validate()) {
+      setPendingSubmit(false);
       return;
     }
 
     setSaving(true);
     setError('');
     setMessage('');
+    setPendingSubmit(false);
 
     try {
       const saved = await saveDraft();
@@ -441,6 +493,30 @@ export function ApplicationForm() {
     } finally {
       setSaving(false);
     }
+  }
+
+  function requestSubmitConfirmation() {
+    if (!approvalOrganizationId) {
+      setSubmitIssues([]);
+      setError('결재 기준 조직을 선택하면 저장/제출할 수 있습니다.');
+      return;
+    }
+
+    if (currentSubmitIssues.length > 0) {
+      setSubmitIssues(currentSubmitIssues);
+      setError('필수 항목을 입력하면 제출할 수 있습니다.');
+      return;
+    }
+
+    setSubmitIssues([]);
+    setError('');
+    setMessage('');
+    setPendingSubmit(true);
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    requestSubmitConfirmation();
   }
 
   return (
@@ -611,6 +687,13 @@ export function ApplicationForm() {
         </div>
 
         {error ? <p className="form-error" role="alert">{error}</p> : null}
+        {submitIssues.length > 0 ? (
+          <ul className="validation-list" aria-label="제출 전 확인할 항목">
+            {submitIssues.map((issue) => (
+              <li key={issue}>{issue}</li>
+            ))}
+          </ul>
+        ) : null}
         {message ? <p className="form-success" role="status">{message}</p> : null}
 
         <div className="form-actions mobile-sticky-actions">
@@ -628,6 +711,51 @@ export function ApplicationForm() {
           </button>
         </div>
       </form>
+
+      {pendingSubmit ? (
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="submit-confirm-title"
+        >
+          <div className="preview-modal compact-modal">
+            <div className="table-toolbar borderless-panel">
+              <strong id="submit-confirm-title">신청서 제출 확인</strong>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="닫기"
+                onClick={() => setPendingSubmit(false)}
+              >
+                <X aria-hidden="true" size={18} />
+              </button>
+            </div>
+            <dl className="definition-grid compact-definition">
+              <div>
+                <dt>사용처</dt>
+                <dd>{vendor.trim()}</dd>
+              </div>
+              <div>
+                <dt>금액</dt>
+                <dd>{formatAmountInput(amount)}원</dd>
+              </div>
+              <div>
+                <dt>첨부</dt>
+                <dd>{receiptFiles.length + existingAttachmentCount}개</dd>
+              </div>
+            </dl>
+            <div className="form-actions">
+              <button className="secondary-button" disabled={isSaving} type="button" onClick={() => setPendingSubmit(false)}>
+                취소
+              </button>
+              <button className="primary-button" disabled={isSaving} type="button" onClick={() => void confirmSubmitApplication()}>
+                제출 확정
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {previewFileIndex !== null && receiptFiles[previewFileIndex] ? (
         <div

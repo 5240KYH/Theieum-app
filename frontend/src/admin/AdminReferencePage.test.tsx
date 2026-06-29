@@ -375,13 +375,47 @@ describe('AdminReferencePage', () => {
 
     const row = await screen.findByRole('row', { name: /#3 employee01/ });
     await userEvent.click(within(row).getByRole('button', { name: '비밀번호 변경' }));
-    await userEvent.type(screen.getByLabelText('새 비밀번호'), 'changed-password');
+    await userEvent.type(screen.getByLabelText(/^새 비밀번호$/), 'changed-password');
+    await userEvent.type(screen.getByLabelText('새 비밀번호 확인'), 'changed-password');
     await userEvent.click(screen.getByRole('button', { name: '변경 저장' }));
 
     expect(await screen.findByRole('status')).toHaveTextContent('비밀번호가 변경되었습니다.');
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/users/3/password', expect.objectContaining({
       method: 'PUT'
     }));
+  });
+
+  it('관리자는 사용자 비밀번호 확인이 일치하지 않으면 API를 호출하지 않는다', async () => {
+    setAuth(['ADMIN', 'APPLICANT']);
+    window.history.pushState({}, '', '/admin/users');
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/admin/users') {
+        return new Response(JSON.stringify(users), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    const row = await screen.findByRole('row', { name: /#3 employee01/ });
+    await userEvent.click(within(row).getByRole('button', { name: '비밀번호 변경' }));
+    await userEvent.type(screen.getByLabelText(/^새 비밀번호$/), 'changed-password');
+    await userEvent.type(screen.getByLabelText('새 비밀번호 확인'), 'different-password');
+    await userEvent.click(screen.getByRole('button', { name: '변경 저장' }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('새 비밀번호와 확인 값이 일치하지 않습니다.');
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      '/api/admin/users/3/password',
+      expect.anything()
+    );
   });
 
   it('관리자는 기준정보를 확인 후 완전 삭제할 수 있다', async () => {
@@ -412,6 +446,8 @@ describe('AdminReferencePage', () => {
 
     const dialog = screen.getByRole('dialog', { name: '완전 삭제' });
     expect(dialog).toHaveTextContent('복구할 수 없습니다');
+    expect(within(dialog).getByRole('button', { name: '완전 삭제' })).toBeDisabled();
+    await userEvent.type(within(dialog).getByLabelText('삭제 확인 문구'), '사원');
     await userEvent.click(within(dialog).getByRole('button', { name: '완전 삭제' }));
 
     expect(await screen.findByRole('status')).toHaveTextContent('완전 삭제되었습니다.');
@@ -459,6 +495,7 @@ describe('AdminReferencePage', () => {
     expect(screen.getByRole('checkbox', { name: 'MANAGER' })).not.toBeChecked();
 
     await userEvent.click(screen.getByRole('checkbox', { name: 'MANAGER' }));
+    expect(screen.getByText('변경 후 역할: MANAGER,APPLICANT')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: '저장' }));
 
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/users/3', expect.objectContaining({

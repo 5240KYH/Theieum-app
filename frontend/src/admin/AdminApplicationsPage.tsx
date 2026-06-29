@@ -52,6 +52,7 @@ export function AdminApplicationsPage() {
   const [pendingStep, setPendingStep] = useState<ApprovalStepResponse | null>(null);
   const [reason, setReason] = useState('');
   const [downloadMonth, setDownloadMonth] = useState(currentMonth);
+  const [downloadConfirmMonth, setDownloadConfirmMonth] = useState<string | null>(null);
   const [isLoading, setLoading] = useState(true);
   const [isApproving, setApproving] = useState(false);
   const [isDeleting, setDeleting] = useState(false);
@@ -214,8 +215,19 @@ export function AdminApplicationsPage() {
     }
   }
 
-  async function handleMonthlyAttachmentDownload() {
+  function openMonthlyAttachmentDownloadConfirm() {
     if (!downloadMonth) {
+      setError('다운로드할 월을 선택해주세요.');
+      return;
+    }
+
+    setDownloadConfirmMonth(downloadMonth);
+    setError('');
+    setMessage('');
+  }
+
+  async function handleMonthlyAttachmentDownload(targetMonth = downloadMonth) {
+    if (!targetMonth) {
       setError('다운로드할 월을 선택해주세요.');
       return;
     }
@@ -225,16 +237,17 @@ export function AdminApplicationsPage() {
     setMessage('');
 
     try {
-      const blob = await downloadMonthlyReceiptAttachments(downloadMonth);
+      const blob = await downloadMonthlyReceiptAttachments(targetMonth);
       const objectUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = objectUrl;
-      link.download = `receipt-attachments-${downloadMonth}.zip`;
+      link.download = `receipt-attachments-${targetMonth}.zip`;
       document.body.appendChild(link);
       link.click();
       link.remove();
       URL.revokeObjectURL(objectUrl);
-      setMessage(`${downloadMonth} 첨부파일 다운로드를 시작했습니다.`);
+      setDownloadConfirmMonth(null);
+      setMessage(`${targetMonth} 첨부파일 다운로드를 시작했습니다.`);
     } catch (requestError) {
       setError(errorMessage(requestError));
     } finally {
@@ -326,7 +339,7 @@ export function AdminApplicationsPage() {
                 className="secondary-button"
                 type="button"
                 disabled={isDownloadingAttachments}
-                onClick={() => void handleMonthlyAttachmentDownload()}
+                onClick={openMonthlyAttachmentDownloadConfirm}
               >
                 <Download aria-hidden="true" size={16} />
                 월별 첨부 다운로드
@@ -455,6 +468,53 @@ export function AdminApplicationsPage() {
                 </button>
                 <button className="primary-button" type="button" disabled={isApproving || !pendingStep} onClick={() => void handleAdminApprove()}>
                   예외 승인
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {downloadConfirmMonth ? (
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="monthly-attachment-download-title"
+        >
+          <div className="preview-modal compact-modal">
+            <div className="table-toolbar borderless-panel">
+              <strong id="monthly-attachment-download-title">월별 첨부 다운로드 확인</strong>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="닫기"
+                disabled={isDownloadingAttachments}
+                onClick={() => setDownloadConfirmMonth(null)}
+              >
+                <X aria-hidden="true" size={18} />
+              </button>
+            </div>
+            <div className="form-panel borderless-panel">
+              <p className="danger-copy">
+                {downloadConfirmMonth} 월별 ZIP에는 민감한 영수증 이미지가 포함될 수 있습니다.
+              </p>
+              <div className="form-actions">
+                <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={isDownloadingAttachments}
+                  onClick={() => setDownloadConfirmMonth(null)}
+                >
+                  취소
+                </button>
+                <button
+                  className="primary-button"
+                  type="button"
+                  disabled={isDownloadingAttachments}
+                  onClick={() => void handleMonthlyAttachmentDownload(downloadConfirmMonth)}
+                >
+                  다운로드 시작
                 </button>
               </div>
             </div>

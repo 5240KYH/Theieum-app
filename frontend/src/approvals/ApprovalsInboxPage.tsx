@@ -35,6 +35,7 @@ export function ApprovalsInboxPage() {
   const [receivedFromMonth, setReceivedFromMonth] = useState('');
   const [receivedToMonth, setReceivedToMonth] = useState('');
   const [comments, setComments] = useState<Record<number, string>>({});
+  const [approveTarget, setApproveTarget] = useState<ApprovalInboxItem | null>(null);
   const [isLoading, setLoading] = useState(true);
   const [processingStepId, setProcessingStepId] = useState<number | null>(null);
   const [error, setError] = useState('');
@@ -61,6 +62,11 @@ export function ApprovalsInboxPage() {
     void loadInbox();
   }, []);
 
+  function requestApprove(item: ApprovalInboxItem) {
+    setError('');
+    setApproveTarget(item);
+  }
+
   async function handleApprove(stepId: number) {
     setProcessingStepId(stepId);
     setError('');
@@ -68,8 +74,10 @@ export function ApprovalsInboxPage() {
     try {
       await approveStep(stepId, comments[stepId] ?? '');
       await loadInbox();
+      return true;
     } catch (requestError) {
       setError(errorMessage(requestError));
+      return false;
     } finally {
       setProcessingStepId(null);
     }
@@ -108,7 +116,7 @@ export function ApprovalsInboxPage() {
         </button>
       </div>
 
-      {error ? <p className="form-error" role="alert">{error}</p> : null}
+      {error && !approveTarget ? <p className="form-error" role="alert">{error}</p> : null}
 
       <div className="table-panel">
         <div className="table-toolbar">
@@ -198,7 +206,7 @@ export function ApprovalsInboxPage() {
                     className="secondary-button"
                     disabled={processingStepId === item.stepId}
                     type="button"
-                    onClick={() => void handleApprove(item.stepId)}
+                    onClick={() => requestApprove(item)}
                   >
                     <Check aria-hidden="true" size={16} />
                     승인
@@ -271,7 +279,7 @@ export function ApprovalsInboxPage() {
                           className="secondary-button"
                           disabled={processingStepId === item.stepId}
                           type="button"
-                          onClick={() => void handleApprove(item.stepId)}
+                          onClick={() => requestApprove(item)}
                         >
                           <Check aria-hidden="true" size={16} />
                           승인
@@ -288,9 +296,6 @@ export function ApprovalsInboxPage() {
                         <Link className="icon-button" to={`/applications/${item.applicationId}`} aria-label={`신청서 ${item.applicationId} 상세`}>
                           <Eye aria-hidden="true" size={16} />
                         </Link>
-                        <button className="secondary-button" disabled type="button">
-                          첨부 확대 보기
-                        </button>
                       </div>
                     </td>
                   </tr>
@@ -304,6 +309,74 @@ export function ApprovalsInboxPage() {
           </table>
         </div>
       </div>
+
+      {approveTarget ? (
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="approve-confirm-title"
+        >
+          <div className="preview-modal compact-modal">
+            <div className="table-toolbar borderless-panel">
+              <strong id="approve-confirm-title">승인 확인</strong>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="닫기"
+                disabled={processingStepId === approveTarget.stepId}
+                onClick={() => setApproveTarget(null)}
+              >
+                <X aria-hidden="true" size={18} />
+              </button>
+            </div>
+            <div className="form-panel borderless-panel">
+              <dl className="mobile-card-meta">
+                <div>
+                  <dt>신청자</dt>
+                  <dd>{approveTarget.applicantName}</dd>
+                </div>
+                <div>
+                  <dt>사용처</dt>
+                  <dd>{approveTarget.vendor}</dd>
+                </div>
+                <div>
+                  <dt>금액</dt>
+                  <dd>{formatMoney(approveTarget.amount)}</dd>
+                </div>
+                <div>
+                  <dt>첨부 여부</dt>
+                  <dd>{attachmentLabel(approveTarget.hasAttachment)}</dd>
+                </div>
+              </dl>
+              {error ? <p className="form-error" role="alert">{error}</p> : null}
+              <div className="form-actions">
+                <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={processingStepId === approveTarget.stepId}
+                  onClick={() => setApproveTarget(null)}
+                >
+                  취소
+                </button>
+                <button
+                  className="primary-button"
+                  type="button"
+                  disabled={processingStepId === approveTarget.stepId}
+                  onClick={async () => {
+                    const approved = await handleApprove(approveTarget.stepId);
+                    if (approved) {
+                      setApproveTarget(null);
+                    }
+                  }}
+                >
+                  승인 확정
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.theieum.approval.auth.AuthenticatedUser;
+import com.theieum.approval.auth.RoleAccess;
 import com.theieum.approval.auth.UserSummary;
 import com.theieum.approval.common.ForbiddenOperationException;
 import com.theieum.approval.common.ResourceNotFoundException;
@@ -79,7 +80,7 @@ public class CalendarEventService {
     }
 
     private void requireManagePermission(AuthenticatedUser user) {
-        if (user == null || user.roles().stream().noneMatch(role -> role.equals("ADMIN") || role.equals("MANAGER"))) {
+        if (!RoleAccess.hasAnyRole(user, "ADMIN", "MANAGER")) {
             throw new ForbiddenOperationException("일정 관리 권한이 없습니다.");
         }
     }

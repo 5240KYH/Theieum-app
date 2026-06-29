@@ -21,6 +21,7 @@ import com.theieum.approval.application.ApplicationApprovalStepRepository;
 import com.theieum.approval.application.ApplicationService;
 import com.theieum.approval.application.ApplicationStatus;
 import com.theieum.approval.auth.AuthenticatedUser;
+import com.theieum.approval.auth.RoleAccess;
 
 import jakarta.validation.Valid;
 
@@ -72,7 +73,7 @@ public class ApprovalController {
     }
 
     private void requireRole(AuthenticatedUser user, String role) {
-        if (user == null || !user.roles().contains(role)) {
+        if (!RoleAccess.hasRole(user, role)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         }
     }

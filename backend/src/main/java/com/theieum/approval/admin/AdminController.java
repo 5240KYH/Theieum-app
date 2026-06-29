@@ -37,6 +37,7 @@ import com.theieum.approval.application.ApplicationService;
 import com.theieum.approval.approval.ApprovalStepType;
 import com.theieum.approval.attachment.FileStorage;
 import com.theieum.approval.auth.AuthenticatedUser;
+import com.theieum.approval.auth.RoleAccess;
 import com.theieum.approval.notification.NotificationEventRepository;
 import com.theieum.approval.user.UserOrganizationService;
 import com.theieum.approval.user.UserOrganizationService.MembershipCommand;
@@ -1052,24 +1053,15 @@ public class AdminController {
     }
 
     private void requireAdmin(AuthenticatedUser user) {
-        if (!hasRole(user, "ADMIN")) {
+        if (!RoleAccess.hasRole(user, "ADMIN")) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         }
     }
 
     private void requireManager(AuthenticatedUser user) {
-        if (!hasRole(user, "ADMIN") && !hasRole(user, "MANAGER")) {
+        if (!RoleAccess.hasAnyRole(user, "ADMIN", "MANAGER")) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         }
-    }
-
-    private boolean hasRole(AuthenticatedUser user, String role) {
-        if (user == null) {
-            return false;
-        }
-        return user.roles().stream()
-                .map(value -> value.trim().toUpperCase())
-                .anyMatch(value -> value.equals(role) || (role.equals("MANAGER") && value.equals("MANGER")));
     }
 
     public record CreateUserRequest(

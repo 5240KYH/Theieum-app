@@ -27,7 +27,7 @@ export function AppRoutes() {
             <Route path="/applications/:id/edit" element={<ApplicationForm />} />
             <Route path="/applications/my" element={<MyApplicationsPage />} />
           </Route>
-          <Route element={<ProtectedRoute requiredAnyRole={['APPLICANT', 'APPROVER', 'ADMIN']} />}>
+          <Route element={<ProtectedRoute requiredAnyRole={['APPLICANT', 'APPROVER', 'ADMIN', 'MANAGER']} />}>
             <Route path="/applications/:id" element={<ApplicationDetailPage />} />
           </Route>
           <Route element={<ProtectedRoute requiredRole="APPROVER" />}>

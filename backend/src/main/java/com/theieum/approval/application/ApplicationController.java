@@ -30,6 +30,7 @@ import com.theieum.approval.attachment.Attachment;
 import com.theieum.approval.attachment.AttachmentRepository;
 import com.theieum.approval.attachment.FileStorage;
 import com.theieum.approval.auth.AuthenticatedUser;
+import com.theieum.approval.auth.RoleAccess;
 import com.theieum.approval.user.UserOrganizationService;
 
 import jakarta.validation.Valid;
@@ -249,20 +250,15 @@ public class ApplicationController {
         if (user == null) {
             return false;
         }
-        return hasRole(user, "ADMIN")
-                || hasRole(user, "MANAGER")
+        return RoleAccess.hasAnyRole(user, "ADMIN", "MANAGER")
                 || application.getApplicant().getId().equals(user.id())
                 || approvalStepRepository.existsReadableByApplicationIdAndApproverId(application.getId(), user.id());
     }
 
     private void requireRole(AuthenticatedUser user, String role) {
-        if (!hasRole(user, role)) {
+        if (!RoleAccess.hasRole(user, role)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         }
-    }
-
-    private boolean hasRole(AuthenticatedUser user, String role) {
-        return user != null && user.roles().contains(role);
     }
 
     public record CreateApplicationRequest(
